@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" media="screen" href="/~d/styles/rss2enclosuresfull.xsl"?>
+<?xml-stylesheet type="text/css" media="screen" href="http://feeds.feedburner.com/~d/styles/itemcontent.css"?>
+<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:media="http://search.yahoo.com/mrss/" xmlns:atom="http://www.w3.org/2005/Atom" version="2.0">
+  <channel>
+    <itunes:summary>In "Hardcore History" journalist and broadcaster Dan Carlin takes his "Martian", unorthodox way of thinking and applies it to the past. Was Alexander the Great as bad a person as Adolf Hitler? What would Apaches with modern weapons be like? Will our modern civilization ever fall like civilizations from past eras? This isn't academic history (and Carlin isn't a historian) but the podcast's unique blend of high drama, masterful narration and Twilight Zone-style twists has entertained millions of listeners.</itunes:summary>
+    <itunes:title>Dan Carlin's Hardcore History</itunes:title>
+    <itunes:subtitle>This isn't academic history (and Carlin isn't a historian) but the podcast's unique blend of high drama, masterful narration and Twilight Zone-style twists has entertained millions of listeners.</itunes:subtitle>
+    <itunes:author>Dan Carlin</itunes:author>
+    <itunes:image href="http://www.dancarlin.com/graphics/DC_HH_iTunes.jpg" />
+    <itunes:block>No</itunes:block>
+    <itunes:new-feed-url>http://newlocation.com/example.rss</itunes:new-feed-url>
+    <itunes:complete>No</itunes:complete>
+    <itunes:owner>
+      <itunes:name>Dan Carlin's Hardcore History</itunes:name>
+      <itunes:email>dan@dancarlin.com</itunes:email>
+    </itunes:owner>
+    <itunes:keywords>History, Military, War, Ancient, Archaeology, Classics, Carlin</itunes:keywords>
+    <itunes:category text="Society &amp; Culture">
+      <itunes:category text="History" /></itunes:category>
+    <itunes:explicit>No</itunes:explicit>
+    <itunes:type>episodic</itunes:type>
+    <item>
+      <itunes:title>Dan Carlin's Hardcore History</itunes:title>
+      <itunes:explicit>No</itunes:explicit>
+      <itunes:author>Dan Carlin</itunes:author>
+      <itunes:block>No</itunes:block>
+      <itunes:isClosedCaptioned>Yes</itunes:isClosedCaptioned>
+      <itunes:order>1</itunes:order>
+      <itunes:image href="http://www.dancarlin.com/graphics/DC_HH_iTunes.jpg" />
+      <itunes:subtitle>If this were a movie, the events and cameos would be too numerous and star-studded to mention. It includes Xerxes, Spartans, Immortals, Alexander the Great, scythed chariots, and several of the greatest battles in history.</itunes:subtitle>
+      <itunes:summary>If this were a movie, the events and cameos would be too numerous and star-studded to mention. It includes Xerxes, Spartans, Immortals, Alexander the Great, scythed chariots, and several of the greatest battles in history.</itunes:summary>
+      <itunes:duration>05:00:30</itunes:duration>
+      <itunes:keywords>Persia, Achaemenid, Xerxes, Darius, Artaxerxes, Greek, Macedonian, ancient history, military, Philip, Alexander, Spartan, Athens, Herodotus, Leonidas, podcast, Plataea, Issus, Salamis, Gaugamela</itunes:keywords>
+      <itunes:episodeType>full</itunes:episodeType>
+      <itunes:season>3</itunes:season>
+      <itunes:episode>2</itunes:episode>
+    </item>
+  </channel>
+</rss>

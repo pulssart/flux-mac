@@ -6,33 +6,116 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXFileReference section */
-		7AA355142E58BD2600D70E5E /* Flux.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Flux.app; sourceTree = BUILT_PRODUCTS_DIR; };
-/* End PBXFileReference section */
+/* Begin PBXBuildFile section */
+		4AD08ADC2F22C45F004400BA /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AD08ADB2F22C45F004400BA /* OnboardingView.swift */; };
+		4AD08ADE2F22CC47004400BA /* HapticFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AD08ADD2F22CC47004400BA /* HapticFeedback.swift */; };
+		4AD08AE02F22CFC8004400BA /* RSSFeedSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AD08ADF2F22CFC8004400BA /* RSSFeedSuggestions.swift */; };
+		4AEC48D82F23503100369D3A /* GlowEffect.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AEC48D72F23503100369D3A /* GlowEffect.swift */; };
+		4AEC48DC2F24FFA700369D3A /* blur.metal in Sources */ = {isa = PBXBuildFile; fileRef = 4AEC48DB2F24FFA700369D3A /* blur.metal */; };
+		7A0901F92E731A7600DA020D /* ConfigurationImportExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0901F82E731A7600DA020D /* ConfigurationImportExportView.swift */; };
+		7A1779602E645EEC00462B11 /* FeedRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A17795F2E645EEC00462B11 /* FeedRow.swift */; };
+		7A1779622E645EEF00462B11 /* AddFeedSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1779612E645EEF00462B11 /* AddFeedSheet.swift */; };
+		7A1779642E645EF000462B11 /* NotificationName+App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1779632E645EF000462B11 /* NotificationName+App.swift */; };
+		7A595CC02E6B0544004BF24A /* NewsletterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A595CBF2E6B0544004BF24A /* NewsletterView.swift */; };
+		7A595CC92E6B298D004BF24A /* NewsletterScheduleSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A595CC82E6B298D004BF24A /* NewsletterScheduleSheet.swift */; };
+		7A9C89CF2E5F996700BF4D8B /* ExyteGrid in Frameworks */ = {isa = PBXBuildFile; productRef = 7A9C89CE2E5F996700BF4D8B /* ExyteGrid */; };
+		7AA3552E2E58C18600D70E5E /* FeedKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7AA3552D2E58C18600D70E5E /* FeedKit */; };
+		7AA355302E58C18600D70E5E /* XMLKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7AA3552F2E58C18600D70E5E /* XMLKit */; };
+		7AB37A702E78A5C800F79F59 /* Defaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AB37A6F2E78A5C800F79F59 /* Defaults.swift */; };
+		7AEECB8F2E5B4DA3004A5B19 /* AISettingsInlineSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AEECB8E2E5B4DA3004A5B19 /* AISettingsInlineSheet.swift */; };
+		7AEECB912E5B5352004A5B19 /* WebView 2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AEECB902E5B5352004A5B19 /* WebView 2.swift */; };
+		7ALOGSW012F9A0000004A5B19 /* LogsWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ALOGSW002F9A0000004A5B19 /* LogsWindowView.swift */; };
+		7AEECB942E5B6178004A5B19 /* Readability.js in Resources */ = {isa = PBXBuildFile; fileRef = 7AEECB932E5B6178004A5B19 /* Readability.js */; };
+		7AF100112E58D00000D70E5E /* FluxApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AF100012E58D00000D70E5E /* FluxApp.swift */; };
+		7AF100122E58D00000D70E5E /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AF100022E58D00000D70E5E /* ContentView.swift */; };
+		7AF100132E58D00000D70E5E /* AppSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AF100032E58D00000D70E5E /* AppSidebar.swift */; };
+		7AF100142E58D00000D70E5E /* FeedsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AF100042E58D00000D70E5E /* FeedsView.swift */; };
+		7AF100152E58D00000D70E5E /* FeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AF100052E58D00000D70E5E /* FeedService.swift */; };
+		7AF100162E58D00000D70E5E /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AF100062E58D00000D70E5E /* Models.swift */; };
+		7AF1001A2E58D00000D70E5E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7AF100072E58D00000D70E5E /* Assets.xcassets */; };
+		7AF1001C2E58D10000D70E5E /* ArticlesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AF1001B2E58D10000D70E5E /* ArticlesView.swift */; };
+		7AF200102E59000000D70E5E /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = 7AF200122E59000000D70E5E /* SwiftSoup */; };
+		7AFAEE252E5E278F0051E757 /* LOCALISATION_README.md in Resources */ = {isa = PBXBuildFile; fileRef = 7AFAEE232E5E278F0051E757 /* LOCALISATION_README.md */; };
+		7AFAEE262E5E278F0051E757 /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AFAEE242E5E278F0051E757 /* Localization.swift */; };
+		7AFAEE282E5E29190051E757 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AFAEE272E5E29190051E757 /* Keychain.swift */; };
+/* End PBXBuildFile section */
 
-/* Begin PBXFileSystemSynchronizedRootGroup section */
-		7AA355162E58BD2600D70E5E /* Flux */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Flux;
-			sourceTree = "<group>";
+/* Begin PBXCopyFilesBuildPhase section */
+		7A1779842E6485EF00462B11 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
 		};
-/* End PBXFileSystemSynchronizedRootGroup section */
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		4AD08ADB2F22C45F004400BA /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		4AD08ADD2F22CC47004400BA /* HapticFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticFeedback.swift; sourceTree = "<group>"; };
+		4AD08ADF2F22CFC8004400BA /* RSSFeedSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RSSFeedSuggestions.swift; sourceTree = "<group>"; };
+		4AEC48D72F23503100369D3A /* GlowEffect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlowEffect.swift; sourceTree = "<group>"; };
+		4AEC48DB2F24FFA700369D3A /* blur.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = blur.metal; sourceTree = "<group>"; };
+		7A0901F82E731A7600DA020D /* ConfigurationImportExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationImportExportView.swift; sourceTree = "<group>"; };
+		7A17795F2E645EEC00462B11 /* FeedRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedRow.swift; sourceTree = "<group>"; };
+		7A1779612E645EEF00462B11 /* AddFeedSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddFeedSheet.swift; sourceTree = "<group>"; };
+		7A1779632E645EF000462B11 /* NotificationName+App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NotificationName+App.swift"; sourceTree = "<group>"; };
+		7A17796B2E6485EE00462B11 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		7A17796D2E6485EE00462B11 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		7A595CBF2E6B0544004BF24A /* NewsletterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewsletterView.swift; sourceTree = "<group>"; };
+		7A595CC82E6B298D004BF24A /* NewsletterScheduleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewsletterScheduleSheet.swift; sourceTree = "<group>"; };
+		7AA355142E58BD2600D70E5E /* Flux.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Flux.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7AB37A6F2E78A5C800F79F59 /* Defaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Defaults.swift; sourceTree = "<group>"; };
+		7AEECB8E2E5B4DA3004A5B19 /* AISettingsInlineSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsInlineSheet.swift; sourceTree = "<group>"; };
+		7AEECB902E5B5352004A5B19 /* WebView 2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WebView 2.swift"; sourceTree = "<group>"; };
+		7ALOGSW002F9A0000004A5B19 /* LogsWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogsWindowView.swift; sourceTree = "<group>"; };
+		7AEECB932E5B6178004A5B19 /* Readability.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = Readability.js; sourceTree = "<group>"; };
+		7AF100012E58D00000D70E5E /* FluxApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluxApp.swift; sourceTree = "<group>"; };
+		7AF100022E58D00000D70E5E /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		7AF100032E58D00000D70E5E /* AppSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSidebar.swift; sourceTree = "<group>"; };
+		7AF100042E58D00000D70E5E /* FeedsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedsView.swift; sourceTree = "<group>"; };
+		7AF100052E58D00000D70E5E /* FeedService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedService.swift; sourceTree = "<group>"; };
+		7AF100062E58D00000D70E5E /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		7AF100072E58D00000D70E5E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		7AF1001B2E58D10000D70E5E /* ArticlesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticlesView.swift; sourceTree = "<group>"; };
+		7AF1001D2E58D20000D70E5E /* Flux.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Flux.entitlements; sourceTree = "<group>"; };
+		7AFAEE232E5E278F0051E757 /* LOCALISATION_README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = LOCALISATION_README.md; sourceTree = "<group>"; };
+		7AFAEE242E5E278F0051E757 /* Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Localization.swift; sourceTree = "<group>"; };
+		7AFAEE272E5E29190051E757 /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keychain.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		7AA355112E58BD2600D70E5E /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7AA3552E2E58C18600D70E5E /* FeedKit in Frameworks */,
+				7AA355302E58C18600D70E5E /* XMLKit in Frameworks */,
+				7A9C89CF2E5F996700BF4D8B /* ExyteGrid in Frameworks */,
+				7AF200102E59000000D70E5E /* SwiftSoup in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		7A17796A2E6485EE00462B11 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				7A17796B2E6485EE00462B11 /* WidgetKit.framework */,
+				7A17796D2E6485EE00462B11 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		7AA3550B2E58BD2600D70E5E = {
 			isa = PBXGroup;
 			children = (
 				7AA355162E58BD2600D70E5E /* Flux */,
+				7A17796A2E6485EE00462B11 /* Frameworks */,
 				7AA355152E58BD2600D70E5E /* Products */,
 			);
 			sourceTree = "<group>";
@@ -45,6 +128,41 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		7AA355162E58BD2600D70E5E /* Flux */ = {
+			isa = PBXGroup;
+			children = (
+				4AEC48DB2F24FFA700369D3A /* blur.metal */,
+				4AEC48D72F23503100369D3A /* GlowEffect.swift */,
+				4AD08ADF2F22CFC8004400BA /* RSSFeedSuggestions.swift */,
+				4AD08ADD2F22CC47004400BA /* HapticFeedback.swift */,
+				4AD08ADB2F22C45F004400BA /* OnboardingView.swift */,
+				7AB37A6F2E78A5C800F79F59 /* Defaults.swift */,
+				7A0901F82E731A7600DA020D /* ConfigurationImportExportView.swift */,
+				7A595CC82E6B298D004BF24A /* NewsletterScheduleSheet.swift */,
+				7A595CBF2E6B0544004BF24A /* NewsletterView.swift */,
+				7AFAEE272E5E29190051E757 /* Keychain.swift */,
+				7AFAEE232E5E278F0051E757 /* LOCALISATION_README.md */,
+				7AFAEE242E5E278F0051E757 /* Localization.swift */,
+				7AEECB932E5B6178004A5B19 /* Readability.js */,
+				7AF1001D2E58D20000D70E5E /* Flux.entitlements */,
+				7AF100072E58D00000D70E5E /* Assets.xcassets */,
+				7AF100012E58D00000D70E5E /* FluxApp.swift */,
+				7AF100022E58D00000D70E5E /* ContentView.swift */,
+				7AF100032E58D00000D70E5E /* AppSidebar.swift */,
+				7AF1001B2E58D10000D70E5E /* ArticlesView.swift */,
+				7AF100042E58D00000D70E5E /* FeedsView.swift */,
+				7AF100052E58D00000D70E5E /* FeedService.swift */,
+				7AF100062E58D00000D70E5E /* Models.swift */,
+				7AEECB8E2E5B4DA3004A5B19 /* AISettingsInlineSheet.swift */,
+				7AEECB902E5B5352004A5B19 /* WebView 2.swift */,
+				7ALOGSW002F9A0000004A5B19 /* LogsWindowView.swift */,
+				7A17795F2E645EEC00462B11 /* FeedRow.swift */,
+				7A1779612E645EEF00462B11 /* AddFeedSheet.swift */,
+				7A1779632E645EF000462B11 /* NotificationName+App.swift */,
+			);
+			path = Flux;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -55,16 +173,18 @@
 				7AA355102E58BD2600D70E5E /* Sources */,
 				7AA355112E58BD2600D70E5E /* Frameworks */,
 				7AA355122E58BD2600D70E5E /* Resources */,
+				7A1779842E6485EF00462B11 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
-			fileSystemSynchronizedGroups = (
-				7AA355162E58BD2600D70E5E /* Flux */,
-			);
 			name = Flux;
 			packageProductDependencies = (
+				7AA3552D2E58C18600D70E5E /* FeedKit */,
+				7AA3552F2E58C18600D70E5E /* XMLKit */,
+				7AF200122E59000000D70E5E /* SwiftSoup */,
+				7A9C89CE2E5F996700BF4D8B /* ExyteGrid */,
 			);
 			productName = Flux;
 			productReference = 7AA355142E58BD2600D70E5E /* Flux.app */;
@@ -78,7 +198,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2600;
-				LastUpgradeCheck = 2600;
+				LastUpgradeCheck = 2620;
 				TargetAttributes = {
 					7AA355132E58BD2600D70E5E = {
 						CreatedOnToolsVersion = 26.0;
@@ -94,6 +214,11 @@
 			);
 			mainGroup = 7AA3550B2E58BD2600D70E5E;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				7AA3552C2E58C18600D70E5E /* XCRemoteSwiftPackageReference "FeedKit" */,
+				7AF200112E59000000D70E5E /* XCRemoteSwiftPackageReference "SwiftSoup" */,
+				7A9C89CD2E5F996700BF4D8B /* XCRemoteSwiftPackageReference "Grid" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7AA355152E58BD2600D70E5E /* Products */;
 			projectDirPath = "";
@@ -109,6 +234,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7AFAEE252E5E278F0051E757 /* LOCALISATION_README.md in Resources */,
+				7AF1001A2E58D00000D70E5E /* Assets.xcassets in Resources */,
+				7AEECB942E5B6178004A5B19 /* Readability.js in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -119,6 +247,30 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4AEC48DC2F24FFA700369D3A /* blur.metal in Sources */,
+				7AF100112E58D00000D70E5E /* FluxApp.swift in Sources */,
+				7AFAEE262E5E278F0051E757 /* Localization.swift in Sources */,
+				7AF100122E58D00000D70E5E /* ContentView.swift in Sources */,
+				7A1779602E645EEC00462B11 /* FeedRow.swift in Sources */,
+				7AF100132E58D00000D70E5E /* AppSidebar.swift in Sources */,
+				7AF1001C2E58D10000D70E5E /* ArticlesView.swift in Sources */,
+				7A595CC02E6B0544004BF24A /* NewsletterView.swift in Sources */,
+				4AD08AE02F22CFC8004400BA /* RSSFeedSuggestions.swift in Sources */,
+				4AD08ADE2F22CC47004400BA /* HapticFeedback.swift in Sources */,
+				7A595CC92E6B298D004BF24A /* NewsletterScheduleSheet.swift in Sources */,
+				7A1779622E645EEF00462B11 /* AddFeedSheet.swift in Sources */,
+				7AB37A702E78A5C800F79F59 /* Defaults.swift in Sources */,
+				7AFAEE282E5E29190051E757 /* Keychain.swift in Sources */,
+				7A1779642E645EF000462B11 /* NotificationName+App.swift in Sources */,
+				4AD08ADC2F22C45F004400BA /* OnboardingView.swift in Sources */,
+				7AEECB8F2E5B4DA3004A5B19 /* AISettingsInlineSheet.swift in Sources */,
+				7ALOGSW012F9A0000004A5B19 /* LogsWindowView.swift in Sources */,
+				7AF100142E58D00000D70E5E /* FeedsView.swift in Sources */,
+				7AF100152E58D00000D70E5E /* FeedService.swift in Sources */,
+				4AEC48D82F23503100369D3A /* GlowEffect.swift in Sources */,
+				7AF100162E58D00000D70E5E /* Models.swift in Sources */,
+				7AEECB912E5B5352004A5B19 /* WebView 2.swift in Sources */,
+				7A0901F92E731A7600DA020D /* ConfigurationImportExportView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -128,6 +280,7 @@
 		7AA3551D2E58BD2700D70E5E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -159,6 +312,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = MKAFV9VL9V;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -182,6 +336,9 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SUPPORTS_MACCATALYST = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -190,6 +347,7 @@
 		7AA3551E2E58BD2700D70E5E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -221,6 +379,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = MKAFV9VL9V;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -237,6 +396,9 @@
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SUPPORTS_MACCATALYST = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 			};
 			name = Release;
@@ -244,88 +406,92 @@
 		7AA355202E58BD2700D70E5E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=macosx*]" = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				AUTOMATION_APPLE_EVENTS = NO;
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
+				CODE_SIGN_ENTITLEMENTS = Flux/Flux.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = MKAFV9VL9V;
+				CURRENT_PROJECT_VERSION = 6;
+				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = YES;
+				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
+				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
-				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
-				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				INFOPLIST_FILE = Flux/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Flux;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = Flux.Flux;
+				PRODUCT_BUNDLE_IDENTIFIER = com.adriendonot.fluxapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
-				SDKROOT = auto;
+				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SUPPORTED_PLATFORMS = macosx;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				XROS_DEPLOYMENT_TARGET = 26.0;
 			};
 			name = Debug;
 		};
 		7AA355212E58BD2700D70E5E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=macosx*]" = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				AUTOMATION_APPLE_EVENTS = NO;
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = NO;
+				CODE_SIGN_ENTITLEMENTS = Flux/Flux.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = MKAFV9VL9V;
+				CURRENT_PROJECT_VERSION = 6;
+				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = YES;
+				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
+				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
-				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
-				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				INFOPLIST_FILE = Flux/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Flux;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = Flux.Flux;
+				PRODUCT_BUNDLE_IDENTIFIER = com.adriendonot.fluxapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
-				SDKROOT = auto;
+				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SUPPORTED_PLATFORMS = macosx;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				XROS_DEPLOYMENT_TARGET = 26.0;
 			};
 			name = Release;
 		};
@@ -351,6 +517,56 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		7A9C89CD2E5F996700BF4D8B /* XCRemoteSwiftPackageReference "Grid" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/exyte/Grid";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.5.0;
+			};
+		};
+		7AA3552C2E58C18600D70E5E /* XCRemoteSwiftPackageReference "FeedKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/nmdias/FeedKit.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 10.1.3;
+			};
+		};
+		7AF200112E59000000D70E5E /* XCRemoteSwiftPackageReference "SwiftSoup" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/scinfu/SwiftSoup.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.7.3;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		7A9C89CE2E5F996700BF4D8B /* ExyteGrid */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7A9C89CD2E5F996700BF4D8B /* XCRemoteSwiftPackageReference "Grid" */;
+			productName = ExyteGrid;
+		};
+		7AA3552D2E58C18600D70E5E /* FeedKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7AA3552C2E58C18600D70E5E /* XCRemoteSwiftPackageReference "FeedKit" */;
+			productName = FeedKit;
+		};
+		7AA3552F2E58C18600D70E5E /* XMLKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7AA3552C2E58C18600D70E5E /* XCRemoteSwiftPackageReference "FeedKit" */;
+			productName = XMLKit;
+		};
+		7AF200122E59000000D70E5E /* SwiftSoup */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7AF200112E59000000D70E5E /* XCRemoteSwiftPackageReference "SwiftSoup" */;
+			productName = SwiftSoup;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 7AA3550C2E58BD2600D70E5E /* Project object */;
 }

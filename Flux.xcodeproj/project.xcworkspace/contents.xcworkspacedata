@@ -4,4 +4,25 @@
    <FileRef
       location = "self:">
    </FileRef>
+   <FileRef
+      location = "group:WidgetDataExporter.swift">
+   </FileRef>
+   <FileRef
+      location = "group:ArticleSnapshot.swift">
+   </FileRef>
+   <FileRef
+      location = "group:WidgetDataStore.swift">
+   </FileRef>
+   <FileRef
+      location = "group:DernierArticleWidget.swift">
+   </FileRef>
+   <FileRef
+      location = "group:Top3Widget.swift">
+   </FileRef>
+   <FileRef
+      location = "group:LirePlusTardWidget.swift">
+   </FileRef>
+   <FileRef
+      location = "group:DeepLinkHandlerExample.swift">
+   </FileRef>
 </Workspace>
