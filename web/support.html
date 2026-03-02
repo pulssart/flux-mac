@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="fr" data-page="support">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flux - Support</title>
+  <meta name="description" content="Support officiel de Flux : aide, questions fréquentes et contact." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="ambient-bg"></div>
+
+  <header class="topbar">
+    <a class="brand" href="index.html">Flux</a>
+    <nav class="topnav">
+      <a href="index.html" data-i18n="nav_home">Accueil</a>
+      <a href="support.html" data-i18n="nav_support">Support</a>
+      <a href="privacy-policy.html" data-i18n="nav_privacy">Confidentialité</a>
+    </nav>
+    <div class="lang-switch" role="group" aria-label="Language switch">
+      <button class="lang-btn active" data-lang="fr">FR</button>
+      <button class="lang-btn" data-lang="en">EN</button>
+    </div>
+  </header>
+
+  <main class="container support-layout">
+    <section class="support-hero reveal">
+      <p class="eyebrow" data-i18n="support_eyebrow">Centre d’aide</p>
+      <h1 data-i18n="support_title">Comment pouvons-nous vous aider&nbsp;?</h1>
+      <p class="lead" data-i18n="support_subtitle">
+        Retrouvez les réponses rapides, les étapes de dépannage et le contact support.
+      </p>
+      <a class="btn btn-primary" href="mailto:contact@adriendonot.com" data-i18n="support_contact_cta">Contacter le support</a>
+    </section>
+
+    <section class="support-grid reveal">
+      <article class="panel">
+        <h2 data-i18n="support_getting_started_title">Démarrage rapide</h2>
+        <ol>
+          <li data-i18n="support_step_1">Ajoutez vos flux depuis la barre latérale.</li>
+          <li data-i18n="support_step_2">Classez vos sources dans des dossiers.</li>
+          <li data-i18n="support_step_3">Activez vos options de lecture dans les réglages.</li>
+        </ol>
+      </article>
+
+      <article class="panel">
+        <h2 data-i18n="support_contact_title">Contact</h2>
+        <p><strong data-i18n="support_contact_email_label">Email :</strong> <a href="mailto:contact@adriendonot.com">contact@adriendonot.com</a></p>
+        <p data-i18n="support_contact_delay">Délai de réponse habituel : 1 à 2 jours ouvrés.</p>
+      </article>
+    </section>
+
+    <section class="faq reveal">
+      <h2 data-i18n="support_faq_title">Questions fréquentes</h2>
+      <details>
+        <summary data-i18n="faq_1_q">L’app ne charge pas certains articles.</summary>
+        <p data-i18n="faq_1_a">Vérifiez votre connexion, puis rafraîchissez la source concernée. Si le problème persiste, contactez le support avec le nom du flux.</p>
+      </details>
+      <details>
+        <summary data-i18n="faq_2_q">Comment importer ou exporter ma configuration&nbsp;?</summary>
+        <p data-i18n="faq_2_a">Ouvrez Réglages puis la section Configuration. Vous pouvez exporter, importer ou supprimer votre configuration depuis cet écran.</p>
+      </details>
+      <details>
+        <summary data-i18n="faq_3_q">Comment changer la langue de l’interface&nbsp;?</summary>
+        <p data-i18n="faq_3_a">Dans Réglages, choisissez la langue dans le menu “Langue de l’interface”. Le changement est appliqué immédiatement.</p>
+      </details>
+    </section>
+  </main>
+
+  <footer class="site-footer container">
+    <span data-i18n="footer_copy">© Flux</span>
+    <div class="footer-links">
+      <a href="index.html" data-i18n="nav_home">Accueil</a>
+      <a href="privacy-policy.html" data-i18n="nav_privacy">Confidentialité</a>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

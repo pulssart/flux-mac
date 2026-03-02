@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="fr" data-page="home">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flux - Lecteur macOS intelligent</title>
+  <meta name="description" content="Flux est un lecteur macOS moderne pour suivre, lire et synthétiser votre actualité." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="ambient-bg"></div>
+
+  <header class="topbar">
+    <a class="brand" href="index.html">Flux</a>
+    <nav class="topnav">
+      <a href="index.html" data-i18n="nav_home">Accueil</a>
+      <a href="support.html" data-i18n="nav_support">Support</a>
+      <a href="privacy-policy.html" data-i18n="nav_privacy">Confidentialité</a>
+    </nav>
+    <div class="lang-switch" role="group" aria-label="Language switch">
+      <button class="lang-btn active" data-lang="fr">FR</button>
+      <button class="lang-btn" data-lang="en">EN</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero container reveal">
+      <p class="eyebrow" data-i18n="hero_eyebrow">Application macOS</p>
+      <h1 data-i18n="hero_title">Votre veille intelligente, sans friction.</h1>
+      <p class="lead" data-i18n="hero_subtitle">
+        Flux rassemble vos sources, simplifie la lecture et génère des résumés locaux pour aller à l’essentiel.
+      </p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#" data-i18n="hero_cta_download">Télécharger sur le Mac App Store</a>
+        <a class="btn btn-ghost" href="support.html" data-i18n="hero_cta_support">Obtenir de l’aide</a>
+      </div>
+    </section>
+
+    <section class="screens container reveal">
+      <div class="section-head">
+        <h2 data-i18n="shots_title">Captures de l’application</h2>
+        <p data-i18n="shots_subtitle">L’interface Flux sur macOS, en situation réelle.</p>
+      </div>
+
+      <div class="shots-grid">
+        <figure class="shot-card">
+          <img src="assets/screenshots/shot-1.png" alt="Flux capture 1" loading="lazy" onerror="this.onerror=null;this.src='assets/screenshots/placeholder.svg';" />
+          <figcaption data-i18n="shot_1_caption">Lecture immersive avec panneau d’informations intelligent.</figcaption>
+        </figure>
+        <figure class="shot-card">
+          <img src="assets/screenshots/shot-2.png" alt="Flux capture 2" loading="lazy" onerror="this.onerror=null;this.src='assets/screenshots/placeholder.svg';" />
+          <figcaption data-i18n="shot_2_caption">Vue classique pour parcourir rapidement vos articles.</figcaption>
+        </figure>
+        <figure class="shot-card">
+          <img src="assets/screenshots/shot-3.png" alt="Flux capture 3" loading="lazy" onerror="this.onerror=null;this.src='assets/screenshots/placeholder.svg';" />
+          <figcaption data-i18n="shot_3_caption">Newsletter générée automatiquement à partir de vos sources.</figcaption>
+        </figure>
+        <figure class="shot-card">
+          <img src="assets/screenshots/shot-4.png" alt="Flux capture 4" loading="lazy" onerror="this.onerror=null;this.src='assets/screenshots/placeholder.svg';" />
+          <figcaption data-i18n="shot_4_caption">Découverte visuelle des contenus avec mise en avant des sujets.</figcaption>
+        </figure>
+        <figure class="shot-card">
+          <img src="assets/screenshots/shot-5.png" alt="Flux capture 5" loading="lazy" onerror="this.onerror=null;this.src='assets/screenshots/placeholder.svg';" />
+          <figcaption data-i18n="shot_5_caption">Résumé clair, source, tags et partage en un coup d’œil.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="features container reveal">
+      <div class="section-head">
+        <h2 data-i18n="feat_title">Pourquoi Flux</h2>
+      </div>
+      <div class="feature-grid">
+        <article class="feature-card">
+          <h3 data-i18n="feat_1_title">Lecture concentrée</h3>
+          <p data-i18n="feat_1_text">Une interface claire qui met le contenu en avant, sans bruit.</p>
+        </article>
+        <article class="feature-card">
+          <h3 data-i18n="feat_2_title">Synthèse locale</h3>
+          <p data-i18n="feat_2_text">Résumés et fonctions IA locales, pensées pour macOS.</p>
+        </article>
+        <article class="feature-card">
+          <h3 data-i18n="feat_3_title">Organisation simple</h3>
+          <p data-i18n="feat_3_text">Dossiers, favoris, découverte et newsletter au même endroit.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer container">
+    <span data-i18n="footer_copy">© Flux</span>
+    <div class="footer-links">
+      <a href="support.html" data-i18n="nav_support">Support</a>
+      <a href="privacy-policy.html" data-i18n="nav_privacy">Confidentialité</a>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
