@@ -201,7 +201,7 @@ struct LogsWindowView: View {
                     }
                     .padding(.vertical, 8)
                 }
-                .background(Color(nsColor: .textBackgroundColor))
+                .background(logsBackgroundColor)
                 .onChange(of: filteredLogs.count) { _, _ in
                     if autoScroll, let lastLog = filteredLogs.last {
                         withAnimation(.easeOut(duration: 0.2)) {
@@ -230,6 +230,14 @@ struct LogsWindowView: View {
             .background(Color.primary.opacity(0.03))
         }
         .frame(minWidth: 600, minHeight: 400)
+    }
+
+    private var logsBackgroundColor: Color {
+        #if os(macOS)
+        Color(nsColor: .textBackgroundColor)
+        #else
+        Color(uiColor: .secondarySystemBackground)
+        #endif
     }
 }
 

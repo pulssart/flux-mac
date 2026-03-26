@@ -9,7 +9,7 @@ struct OnboardingView: View {
     @Environment(FeedService.self) private var feedService
     private let lm = LocalizationManager.shared
     @AppStorage("notificationsEnabled") private var notificationsEnabled: Bool = false
-    @AppStorage("reader.reduceOverlaysEnabled") private var reduceOverlaysEnabled: Bool = false
+    @AppStorage("hapticsEnabled") private var hapticsEnabled: Bool = true
 
     private enum OnboardingStep {
         case info(OnboardingPage)
@@ -17,45 +17,54 @@ struct OnboardingView: View {
         case sources
     }
 
-    private let steps: [OnboardingStep] = [
-        .info(OnboardingPage(
-            icon: "sparkles",
-            iconColor: .purple,
-            title: "Bienvenue dans Flux",
-            subtitle: "Votre lecteur RSS intelligent",
-            description: "Suivez vos sites préférés et restez informé grâce à l'intelligence artificielle locale."
-        )),
-        .info(OnboardingPage(
-            icon: "newspaper.fill",
-            iconColor: .blue,
-            title: "Mur d'actualités",
-            subtitle: "Toute l'info en un coup d'œil",
-            description: "Visualisez tous vos articles dans une interface moderne et élégante."
-        )),
-        .info(OnboardingPage(
-            icon: "wand.and.stars",
-            iconColor: .orange,
-            title: "Newsletter IA",
-            subtitle: "Propulsée par l'intelligence artificielle locale",
-            description: "Chaque jour, recevez une synthèse personnalisée de vos flux, générée 100% on-device."
-        )),
-        .preferences,
-        .sources,
-        .info(OnboardingPage(
-            icon: "folder.fill",
-            iconColor: .green,
-            title: "Organisation",
-            subtitle: "Classez vos sources",
-            description: "Créez des dossiers et organisez vos flux par glisser-déposer."
-        )),
-        .info(OnboardingPage(
-            icon: "plus.circle.fill",
-            iconColor: .cyan,
-            title: "Commencer",
-            subtitle: "Ajoutez votre premier flux",
-            description: "Cliquez sur + et collez l'URL d'un site. Flux trouvera le flux RSS automatiquement."
-        ))
-    ]
+    private var steps: [OnboardingStep] {
+        [
+            .info(OnboardingPage(
+                icon: "sparkles",
+                iconColor: .purple,
+                title: lm.localizedString(.onboardingWelcomeTitle),
+                subtitle: lm.localizedString(.onboardingWelcomeSubtitle),
+                description: lm.localizedString(.onboardingWelcomeDescription)
+            )),
+            .info(OnboardingPage(
+                icon: "newspaper.fill",
+                iconColor: .blue,
+                title: lm.localizedString(.onboardingNewsWallTitle),
+                subtitle: lm.localizedString(.onboardingNewsWallSubtitle),
+                description: lm.localizedString(.onboardingNewsWallDescription)
+            )),
+            .info(OnboardingPage(
+                icon: "wand.and.stars",
+                iconColor: .orange,
+                title: lm.localizedString(.onboardingAITitle),
+                subtitle: lm.localizedString(.onboardingAISubtitle),
+                description: lm.localizedString(.onboardingAIDescription)
+            )),
+            .preferences,
+            .sources,
+            .info(OnboardingPage(
+                icon: "folder.fill",
+                iconColor: .green,
+                title: lm.localizedString(.onboardingOrganizationTitle),
+                subtitle: lm.localizedString(.onboardingOrganizationSubtitle),
+                description: lm.localizedString(.onboardingOrganizationDescription)
+            )),
+            .info(OnboardingPage(
+                icon: "safari.fill",
+                iconColor: .blue,
+                title: lm.localizedString(.onboardingSafariTitle),
+                subtitle: lm.localizedString(.onboardingSafariSubtitle),
+                description: lm.localizedString(.onboardingSafariDescription)
+            )),
+            .info(OnboardingPage(
+                icon: "plus.circle.fill",
+                iconColor: .cyan,
+                title: lm.localizedString(.onboardingStartTitle),
+                subtitle: lm.localizedString(.onboardingStartSubtitle),
+                description: lm.localizedString(.onboardingStartDescription)
+            ))
+        ]
+    }
 
     private struct ProposedSource: Identifiable {
         let id: String
@@ -155,9 +164,9 @@ struct OnboardingView: View {
                 .frame(height: 70)
 
             VStack(spacing: 8) {
-                Text("Choisissez vos premières sources")
+                Text(lm.localizedString(.onboardingSourcesTitle))
                     .font(.title.bold())
-                Text("Vous pouvez les modifier plus tard dans la sidebar.")
+                Text(lm.localizedString(.onboardingSourcesSubtitle))
                     .font(.headline)
                     .foregroundStyle(.secondary)
             }
@@ -201,20 +210,35 @@ struct OnboardingView: View {
                 .frame(height: 70)
 
             VStack(spacing: 8) {
-                Text("Préférences")
+                Text(lm.localizedString(.onboardingPreferencesTitle))
                     .font(.title.bold())
-                Text("Choisissez vos options, vous pourrez les modifier plus tard.")
+                Text(lm.localizedString(.onboardingPreferencesSubtitle))
                     .font(.headline)
                     .foregroundStyle(.secondary)
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                Toggle("Activer les notifications", isOn: $notificationsEnabled)
-                Toggle("Réduire les popups dans le lecteur", isOn: $reduceOverlaysEnabled)
+                Toggle(lm.localizedString(.onboardingEnableNotifications), isOn: $notificationsEnabled)
+                Toggle(lm.localizedString(.hapticsToggle), isOn: $hapticsEnabled)
+
+                Divider()
+
+                HStack {
+                    Text(lm.localizedString(.interfaceLanguage))
+                    Spacer()
+                    Picker(lm.localizedString(.language), selection: Binding(
+                        get: { lm.currentLanguage },
+                        set: { lm.currentLanguage = $0 }
+                    )) {
+                        ForEach(SupportedLanguage.allCases, id: \.self) { language in
+                            Text("\(language.flag) \(language.displayName)")
+                                .tag(language)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 180, alignment: .trailing)
+                }
             }
-            #if os(macOS)
-            .toggleStyle(.checkbox)
-            #endif
             .frame(maxWidth: 380, alignment: .leading)
             .padding(.top, 8)
             .onChange(of: notificationsEnabled) { _, newValue in
@@ -262,7 +286,7 @@ struct OnboardingView: View {
                     completeOnboarding()
                 }
             }) {
-                Text(currentPage < steps.count - 1 ? "Suivant" : "Commencer")
+                Text(currentPage < steps.count - 1 ? lm.localizedString(.onboardingNext) : lm.localizedString(.onboardingStart))
                     .frame(width: 90)
             }
             .buttonStyle(.borderedProminent)
