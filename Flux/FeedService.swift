@@ -179,14 +179,32 @@ final class FeedService {
         loadReaderNotes()
         logger.info("FeedService init — feeds: \(self.feeds.count), articles: \(self.articles.count)")
         setupDefaultFeedsIfNeeded()
+        migrateResetIsReadIfNeeded()
         scheduleAutoRefresh()
         Task { [weak self] in
             await self?.ensureFavicons()
         }
-        loadNewsletterSchedule()
-        scheduleNewsletterTimers()
+        // Newsletter schedule désactivé
+        // loadNewsletterSchedule()
+        // scheduleNewsletterTimers()
     }
     
+    /// Migration one-shot : reset isRead pour passer au nouveau système (lu = article ouvert individuellement)
+    private func migrateResetIsReadIfNeeded() {
+        let key = "migration_isRead_reset_v1"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        var count = 0
+        for article in articles where article.isRead {
+            article.isRead = false
+            count += 1
+        }
+        if count > 0 {
+            try? modelContext.save()
+            logger.info("Migration: reset isRead to false for \(count) articles")
+        }
+        UserDefaults.standard.set(true, forKey: key)
+    }
+
     /// Configure les flux par défaut lors de la première utilisation
     private func setupDefaultFeedsIfNeeded() {
         // Si des flux existent déjà, ne rien faire
@@ -2492,7 +2510,7 @@ final class FeedService {
                     feedId: feed.id,
                     title: title,
                     url: url,
-                    author: it.author,
+                    author: Self.cleanCDATA(it.author),
                     publishedAt: it.date,
                     contentHTML: rawHTML,
                     contentText: cleanedText,
@@ -3250,6 +3268,14 @@ final class FeedService {
     }
 
     func refreshAppBadge() {
+        updateAppBadge()
+    }
+
+    func markArticleAsRead(_ article: Article) {
+        guard !article.isRead else { return }
+        article.isRead = true
+        try? modelContext.save()
+        badgeUpdateTrigger += 1
         updateAppBadge()
     }
 
@@ -4431,6 +4457,17 @@ final class FeedService {
     }
 
     // Nettoie un HTML pour produire un texte lisible: supprime scripts/styles, normalise espaces, garde les sauts de ligne de base
+    private static func cleanCDATA(_ text: String?) -> String? {
+        guard let text, !text.isEmpty else { return nil }
+        var result = text
+        result = result.replacingOccurrences(of: "<![CDATA[", with: "")
+        result = result.replacingOccurrences(of: "]]>", with: "")
+        result = result.replacingOccurrences(of: #"<!\[CDATA\[|\]\]>"#, with: "", options: .regularExpression)
+        result = result.replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
+        result = result.trimmingCharacters(in: .whitespacesAndNewlines)
+        return result.isEmpty ? nil : result
+    }
+
     private func extractPlainText(from html: String?) -> String? {
         guard let html, !html.isEmpty else { return nil }
         #if canImport(SwiftSoup)

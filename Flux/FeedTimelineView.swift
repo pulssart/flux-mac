@@ -13,9 +13,7 @@ struct FeedTimelineView: View {
     @AppStorage("reader.alwaysOpenInBrowser") private var alwaysOpenInBrowser: Bool = false
     private let lm = LocalizationManager.shared
 
-    #if os(iOS)
     @Environment(iPadSheetState.self) private var sheetState: iPadSheetState?
-    #endif
 
     private var isIPadDevice: Bool {
         #if os(iOS)
@@ -119,6 +117,16 @@ struct FeedTimelineView: View {
     }
 
     private func openInAppWebView(_ url: URL) {
+        if isYouTube(url) {
+            if let article = articles.first(where: { $0.url == url }) {
+                feedService.markArticleAsRead(article)
+            }
+            withAnimation(.easeInOut(duration: 0.3)) {
+                sheetState?.youtubeURL = url
+            }
+            return
+        }
+
         if alwaysOpenInBrowser {
             #if os(macOS)
             NSWorkspace.shared.open(url)
@@ -128,14 +136,13 @@ struct FeedTimelineView: View {
             return
         }
 
-        #if os(iOS)
-        if isIPadDevice {
-            if let article = articles.first(where: { $0.url == url }) {
+        if let article = articles.first(where: { $0.url == url }) {
+            feedService.markArticleAsRead(article)
+            withAnimation(.easeInOut(duration: 0.3)) {
                 sheetState?.article = article
-                return
             }
+            return
         }
-        #endif
 
         withAnimation(.easeInOut(duration: 0.28)) {
             webURL = url

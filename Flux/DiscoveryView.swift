@@ -17,9 +17,7 @@ struct DiscoveryView: View {
     @State private var lastArticleCount: Int = -1
     private let lm = LocalizationManager.shared
 
-    #if os(iOS)
     @Environment(iPadSheetState.self) private var sheetState: iPadSheetState?
-    #endif
 
     private var isIPadDevice: Bool {
         #if os(iOS)
@@ -179,15 +177,24 @@ struct DiscoveryView: View {
         }
     }
 
+    private var allDiscoveryArticles: [Article] {
+        let hero = cachedLayout.hero.map { [$0] } ?? []
+        let rest = cachedLayout.groups.flatMap { g in (g.grid) + [g.featured].compactMap { $0 } }
+        return hero + rest
+    }
+
     private func openArticle(_ url: URL) {
-        #if os(iOS)
-        if isIPadDevice && isYouTubeDiscovery(url) {
-            sheetState?.youtubeURL = url
+        if isYouTubeDiscovery(url) {
+            if let article = allDiscoveryArticles.first(where: { $0.url == url }) {
+                feedService.markArticleAsRead(article)
+            }
+            withAnimation(.easeInOut(duration: 0.3)) {
+                sheetState?.youtubeURL = url
+            }
             return
         }
-        #endif
 
-        if isYouTubeDiscovery(url) || alwaysOpenInBrowser {
+        if alwaysOpenInBrowser {
             #if os(macOS)
             NSWorkspace.shared.open(url)
             #elseif os(iOS)
@@ -196,19 +203,13 @@ struct DiscoveryView: View {
             return
         }
 
-        #if os(iOS)
-        if isIPadDevice {
-            let allArticles = cachedLayout.hero.map { [$0] + cachedLayout.groups.flatMap { g in
-                (g.grid) + [g.featured].compactMap { $0 }
-            } } ?? cachedLayout.groups.flatMap { g in
-                (g.grid) + [g.featured].compactMap { $0 }
-            }
-            if let article = allArticles.first(where: { $0.url == url }) {
+        if let article = allDiscoveryArticles.first(where: { $0.url == url }) {
+            feedService.markArticleAsRead(article)
+            withAnimation(.easeInOut(duration: 0.3)) {
                 sheetState?.article = article
-                return
             }
+            return
         }
-        #endif
 
         withAnimation(.easeInOut(duration: 0.28)) {
             webStartInReaderMode = true
@@ -791,3 +792,4 @@ private func articleContextMenu(article: Article, feedService: FeedService) -> s
         Label(lm.localizedString(.delete), systemImage: "trash")
     }
 }
+

@@ -95,6 +95,10 @@ struct ArticlesView: View {
         feedId == nil && !showOnlyFavorites
     }
 
+    private var shouldUseWallHeaderSlider: Bool {
+        isFeedWall && folderId == nil && showOnlyFavorites == false
+    }
+
     private var isMusicFeed: Bool {
         guard let fid = feedId else { return false }
         return feedService.isMusicFeed(feedId: fid)
@@ -430,6 +434,7 @@ struct ArticlesView: View {
                 standardScrollContent(availableWidth: availableWidth, wallLayout: wallLayout)
                 #endif
             }
+            .coordinateSpace(name: "ipadScroll")
             #if os(iOS)
             .contentMargins(.top, isIPadDevice ? 0 : nil, for: .scrollContent)
             .ignoresSafeArea(.container, edges: isIPadDevice ? .top : [])
@@ -480,9 +485,28 @@ struct ArticlesView: View {
         VStack(spacing: gridSpacing) {
             // Stretchable header: GeometryReader inline, zero @State
             if !articlesSorted.isEmpty && shouldUseUniformCardsLayout == false {
-                if let first = articlesSorted.first {
+                if shouldUseWallHeaderSlider {
+                    let heroArticles = buildFeedWallHeaderArticles(from: articlesSorted)
                     GeometryReader { geo in
-                        let minY = geo.frame(in: .global).minY
+                        let minY = geo.frame(in: .named("ipadScroll")).minY
+                        let stretch = max(0, minY)
+                        FeedWallHeroSlider(
+                            articles: heroArticles,
+                            isLiveResizing: isWindowLiveResizing,
+                            isFullBleedHeader: true,
+                            showsArrowControls: false
+                        ) { url in
+                            openArticle(url)
+                        }
+                        .frame(width: geo.size.width, height: heroHeight + stretch)
+                        .clipped()
+                        .offset(y: -stretch)
+                    }
+                    .frame(height: heroHeight)
+                    .id("hero-slider-\(scrollIdentity)-\(heroArticles.map(\.id.uuidString).joined(separator: "-"))")
+                } else if let first = articlesSorted.first {
+                    GeometryReader { geo in
+                        let minY = geo.frame(in: .named("ipadScroll")).minY
                         let stretch = max(0, minY)
                         ArticleHeroCard(article: first, isLiveResizing: isWindowLiveResizing, isFullBleedHeader: true) { url in
                             openArticle(url)
@@ -708,7 +732,22 @@ struct ArticlesView: View {
 
     @ViewBuilder
     private func heroSectionView() -> some View {
-        if let first = articlesSorted.first {
+        if shouldUseWallHeaderSlider {
+            let heroArticles = buildFeedWallHeaderArticles(from: articlesSorted)
+            if heroArticles.isEmpty == false {
+                FeedWallHeroSlider(
+                    articles: heroArticles,
+                    isLiveResizing: isWindowLiveResizing,
+                    isFullBleedHeader: isIPadDevice,
+                    showsArrowControls: !isIPadDevice
+                ) { url in
+                    openArticle(url)
+                }
+                .id("hero-slider-\(scrollIdentity)-\(heroArticles.map(\.id.uuidString).joined(separator: "-"))")
+                .padding(.horizontal, heroHorizontalInset)
+                .zIndex(0)
+            }
+        } else if let first = articlesSorted.first {
             ArticleHeroCard(article: first, isLiveResizing: isWindowLiveResizing, isFullBleedHeader: isIPadDevice) { url in
                 openArticle(url)
             }
@@ -841,14 +880,17 @@ struct ArticlesView: View {
             openExternally(url)
             return
         }
-        #if os(iOS)
-        if isIPadDevice && isYouTubeURL(url) {
-            sheetState?.youtubeURL = url
+        if isYouTubeURL(url) {
+            if let article = articlesSorted.first(where: { $0.url == url }) {
+                feedService.markArticleAsRead(article)
+            }
+            withAnimation(.easeInOut(duration: 0.3)) {
+                sheetState?.youtubeURL = url
+            }
             return
         }
-        #endif
 
-        if isYouTubeURL(url) || alwaysOpenInBrowser {
+        if alwaysOpenInBrowser {
             openExternally(url)
             return
         }
@@ -857,6 +899,7 @@ struct ArticlesView: View {
         if isIPadDevice {
             // iPad: open summary sheet instead of WebDrawer
             if let article = articlesSorted.first(where: { $0.url == url }) {
+                feedService.markArticleAsRead(article)
                 sheetState?.article = article
             } else {
                 // Fallback: open in Safari if article not found
@@ -865,6 +908,15 @@ struct ArticlesView: View {
             return
         }
         #endif
+
+        // Mac & iPhone: open summary sheet if article found, fallback to WebDrawer
+        if let article = articlesSorted.first(where: { $0.url == url }) {
+            feedService.markArticleAsRead(article)
+            withAnimation(.easeInOut(duration: 0.3)) {
+                sheetState?.article = article
+            }
+            return
+        }
 
         NotificationCenter.default.post(name: .collapseSidebar, object: nil)
 
@@ -1272,7 +1324,9 @@ private struct ArticleHeroCard: View {
                     .lineLimit(2)
             }
         }
-        .padding(24)
+        .padding(.horizontal, 24)
+        .padding(.top, 24)
+        .padding(.bottom, 52)
     }
     
     var body: some View {
@@ -1304,6 +1358,11 @@ private struct ArticleHeroCard: View {
         #endif
         .background(Color.black.opacity(colorScheme == .dark ? 0.34 : 0.12))
         .clipShape(RoundedRectangle(cornerRadius: isFullBleedHeader ? 0 : 14, style: .continuous))
+        .overlay(alignment: .topTrailing) {
+            if !article.isRead {
+                UnreadCornerBadge(cornerRadius: isFullBleedHeader ? 0 : 14)
+            }
+        }
         .overlay(alignment: .topLeading) {
             if isHovering {
                 ReadLaterButton(article: article)
@@ -1557,6 +1616,11 @@ private struct ArticleGridCard: View {
         #endif
         .background(cardBackgroundStyle)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(alignment: .topTrailing) {
+            if !article.isRead {
+                UnreadCornerBadge()
+            }
+        }
         .overlay(alignment: .topLeading) {
             if isHovering {
                 ReadLaterButton(article: article)
@@ -1724,6 +1788,17 @@ private func cleanSourceText(_ text: String) -> String {
     return result.trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
+private func buildFeedWallHeaderArticles(from articles: [Article]) -> [Article] {
+    let grouped = Dictionary(grouping: articles, by: \.feedId)
+
+    return grouped.compactMap { _, feedArticles in
+        feedArticles
+            .filter { !isYouTube($0.url) }
+            .max(by: { ($0.publishedAt ?? .distantPast) < ($1.publishedAt ?? .distantPast) })
+    }
+    .sorted { ($0.publishedAt ?? .distantPast) > ($1.publishedAt ?? .distantPast) }
+}
+
 private struct FeedWallGridLayout {
     let columnCount: Int
     let minCardWidth: CGFloat
@@ -1736,6 +1811,93 @@ private struct FeedWallGridLayout {
 
     var id: Int {
         columnCount
+    }
+}
+
+private struct FeedWallHeroSlider: View {
+    let articles: [Article]
+    let isLiveResizing: Bool
+    let isFullBleedHeader: Bool
+    let showsArrowControls: Bool
+    let onOpenURL: (URL) -> Void
+
+    @State private var selectedIndex = 0
+    private let autoAdvanceTimer = Timer.publish(every: 20, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        ZStack {
+            #if os(iOS)
+            TabView(selection: $selectedIndex) {
+                ForEach(Array(articles.enumerated()), id: \.element.id) { index, article in
+                    ArticleHeroCard(
+                        article: article,
+                        isLiveResizing: isLiveResizing,
+                        isFullBleedHeader: isFullBleedHeader
+                    ) { url in
+                        onOpenURL(url)
+                    }
+                    .tag(index)
+                }
+            }
+            #else
+            if articles.isEmpty == false {
+                ArticleHeroCard(
+                    article: articles[selectedIndex],
+                    isLiveResizing: isLiveResizing,
+                    isFullBleedHeader: isFullBleedHeader
+                ) { url in
+                    onOpenURL(url)
+                }
+            }
+            #endif
+
+            if showsArrowControls && articles.count > 1 {
+                HStack {
+                    sliderArrowButton(systemName: "chevron.left") {
+                        moveSelection(by: -1)
+                    }
+
+                    Spacer()
+
+                    sliderArrowButton(systemName: "chevron.right") {
+                        moveSelection(by: 1)
+                    }
+                }
+                .padding(.horizontal, 18)
+                .allowsHitTesting(true)
+            }
+        }
+        #if os(iOS)
+        .tabViewStyle(.page(indexDisplayMode: articles.count > 1 ? .automatic : .never))
+        .indexViewStyle(.page(backgroundDisplayMode: .interactive))
+        #endif
+        .onReceive(autoAdvanceTimer) { _ in
+            guard articles.count > 1, isLiveResizing == false else { return }
+            moveSelection(by: 1)
+        }
+    }
+
+    private func moveSelection(by step: Int) {
+        guard articles.isEmpty == false else { return }
+        withAnimation(.easeInOut(duration: 0.35)) {
+            selectedIndex = (selectedIndex + step + articles.count) % articles.count
+        }
+    }
+
+    @ViewBuilder
+    private func sliderArrowButton(systemName: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 42, height: 42)
+                .background(.black.opacity(0.34), in: Circle())
+                .overlay(
+                    Circle()
+                        .stroke(.white.opacity(0.16), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -2094,6 +2256,24 @@ private func isTwitterURL(_ url: URL?) -> Bool {
         || host.hasSuffix(".twitter.com")
 }
 
+private struct UnreadCornerBadge: View {
+    var cornerRadius: CGFloat = 14
+    var body: some View {
+        Canvas { context, size in
+            let path = Path { p in
+                p.move(to: CGPoint(x: size.width, y: 0))
+                p.addLine(to: CGPoint(x: 0, y: 0))
+                p.addLine(to: CGPoint(x: size.width, y: size.height))
+                p.closeSubpath()
+            }
+            context.fill(path, with: .color(.blue))
+        }
+        .frame(width: 30, height: 30)
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: cornerRadius))
+        .allowsHitTesting(false)
+    }
+}
+
 private struct ReadLaterButton: View {
     let article: Article
     @Environment(FeedService.self) private var feedService
@@ -2423,6 +2603,8 @@ extension String {
     var decodedHTMLEntities: String {
         var text = self
         text = text
+            .replacingOccurrences(of: "<![CDATA[", with: "")
+            .replacingOccurrences(of: "]]>", with: "")
             .replacingOccurrences(of: "&amp;", with: "&")
             .replacingOccurrences(of: "&quot;", with: "\"")
             .replacingOccurrences(of: "&apos;", with: "'")
@@ -2470,6 +2652,30 @@ struct ArticleSummarySheet: View {
     @State private var takeaways: [String] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
+    @State private var currentImageIndex: Int = 0
+
+    private var allImageURLs: [URL] {
+        var urls: [URL] = []
+        if let main = article.imageURL { urls.append(main) }
+        if let html = article.contentHTML {
+            let pattern = #"<img[^>]+src\s*=\s*[\"']([^\"']+)[\"']"#
+            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+                let matches = regex.matches(in: html, range: NSRange(html.startIndex..., in: html))
+                for match in matches {
+                    if let range = Range(match.range(at: 1), in: html) {
+                        let src = String(html[range])
+                        if let url = URL(string: src),
+                           !urls.contains(url),
+                           !src.contains("tracking") && !src.contains("pixel") && !src.contains("1x1"),
+                           src.hasSuffix(".jpg") || src.hasSuffix(".jpeg") || src.hasSuffix(".png") || src.hasSuffix(".webp") || src.contains("/image") || src.contains("img") {
+                            urls.append(url)
+                        }
+                    }
+                }
+            }
+        }
+        return urls
+    }
 
     private var sourceFeed: Feed? {
         feedService.feeds.first(where: { $0.id == article.feedId })
@@ -2494,31 +2700,34 @@ struct ArticleSummarySheet: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    // Hero image
-                    headerImage
-                    // Content
-                    VStack(alignment: .leading, spacing: 24) {
-                        articleMeta
-                        if isLoading {
-                            loadingSection
-                        } else if let error = errorMessage {
-                            errorSection(error)
-                        } else {
-                            summarySection
-                            if !takeaways.isEmpty {
-                                takeawaysSection
+            GeometryReader { outerProxy in
+                let safeTop = outerProxy.safeAreaInsets.top
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        // Hero image
+                        headerImage
+                            .padding(.top, -safeTop)
+                        // Content
+                        VStack(alignment: .leading, spacing: 24) {
+                            articleMeta
+                            if isLoading {
+                                loadingSection
+                            } else if let error = errorMessage {
+                                errorSection(error)
+                            } else {
+                                summarySection
+                                if !takeaways.isEmpty {
+                                    takeawaysSection
+                                }
                             }
                         }
+                        .padding(.horizontal, 24)
+                        .padding(.top, 24)
+                        .padding(.bottom, 40)
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 24)
-                    .padding(.bottom, 40)
                 }
             }
             .background(Color(.systemGroupedBackground))
-            .ignoresSafeArea(.container, edges: .top)
             .toolbarVisibility(.visible, for: .navigationBar)
             .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
             .toolbar {
@@ -2553,16 +2762,23 @@ struct ArticleSummarySheet: View {
 
     // MARK: - Subviews
 
+    private let ipadHeroHeight: CGFloat = 420
+
+
+
     private var headerImage: some View {
-        Group {
-            if let imageURL = article.imageURL {
-                AsyncImage(url: imageURL) { phase in
+        let images = allImageURLs
+        return Group {
+            if images.isEmpty {
+                headerPlaceholder
+            } else if images.count == 1 {
+                AsyncImage(url: images[0]) { phase in
                     switch phase {
                     case .success(let img):
                         img.resizable()
-                            .aspectRatio(16/9, contentMode: .fill)
+                            .scaledToFill()
                             .frame(maxWidth: .infinity)
-                            .frame(height: 420)
+                            .frame(height: ipadHeroHeight)
                             .clipped()
                     case .failure:
                         headerPlaceholder
@@ -2574,7 +2790,30 @@ struct ArticleSummarySheet: View {
                     }
                 }
             } else {
-                headerPlaceholder
+                TabView(selection: $currentImageIndex) {
+                    ForEach(Array(images.enumerated()), id: \.offset) { index, url in
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let img):
+                                img.resizable()
+                                    .aspectRatio(16/9, contentMode: .fill)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: ipadHeroHeight)
+                                    .clipped()
+                            case .failure:
+                                headerPlaceholder
+                            case .empty:
+                                headerPlaceholder
+                                    .overlay { ProgressView() }
+                            @unknown default:
+                                headerPlaceholder
+                            }
+                        }
+                        .tag(index)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .always))
+                .frame(height: ipadHeroHeight)
             }
         }
     }
@@ -2622,9 +2861,10 @@ struct ArticleSummarySheet: View {
                 .font(.title)
                 .fontWeight(.bold)
                 .lineLimit(4)
-                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             // Author
-            if let author = article.author, !author.isEmpty {
+            if let author = article.author?.replacingOccurrences(of: #"<!\[CDATA\[|\]\]>"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines), !author.isEmpty {
                 Text(author)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -2872,6 +3112,667 @@ struct ArticleSummarySheet: View {
 }
 
 struct ShimmerModifier: ViewModifier {
+    @State private var phase: CGFloat = 0
+    func body(content: Content) -> some View {
+        content
+            .opacity(0.4 + 0.6 * (0.5 + 0.5 * Foundation.sin(phase)))
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                    phase = .pi
+                }
+            }
+    }
+}
+#endif
+
+// MARK: - macOS Article Summary Sheet
+
+#if os(macOS)
+struct MacArticleSummarySheet: View {
+    let article: Article
+    let feedService: FeedService
+    let containerWidth: CGFloat
+    let containerHeight: CGFloat
+    let onClose: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var summaryText: String = ""
+    @State private var takeaways: [String] = []
+    @State private var isLoading = true
+    @State private var errorMessage: String?
+    @State private var heroRestMinY: CGFloat = 0
+    @State private var currentImageIndex: Int = 0
+
+    private var allImageURLs: [URL] {
+        var urls: [URL] = []
+        if let main = article.imageURL { urls.append(main) }
+        if let html = article.contentHTML {
+            let pattern = #"<img[^>]+src\s*=\s*[\"']([^\"']+)[\"']"#
+            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+                let matches = regex.matches(in: html, range: NSRange(html.startIndex..., in: html))
+                for match in matches {
+                    if let range = Range(match.range(at: 1), in: html) {
+                        let src = String(html[range])
+                        if let url = URL(string: src),
+                           !urls.contains(url),
+                           !src.contains("tracking") && !src.contains("pixel") && !src.contains("1x1"),
+                           src.hasSuffix(".jpg") || src.hasSuffix(".jpeg") || src.hasSuffix(".png") || src.hasSuffix(".webp") || src.contains("/image") || src.contains("img") {
+                            urls.append(url)
+                        }
+                    }
+                }
+            }
+        }
+        return urls
+    }
+
+    private var hasMultipleImages: Bool { allImageURLs.count > 1 }
+
+    private var sheetWidth: CGFloat {
+        let maxWidth: CGFloat = 900
+        let horizontalPadding: CGFloat = 40
+        return min(maxWidth, containerWidth - horizontalPadding)
+    }
+
+    private var sheetHeight: CGFloat {
+        let maxHeight: CGFloat = 920
+        let verticalPadding: CGFloat = 60
+        return min(maxHeight, containerHeight - verticalPadding)
+    }
+
+    private var cornerRadius: CGFloat {
+        sheetWidth >= containerWidth - 2 ? 0 : 16
+    }
+
+    private var heroHeight: CGFloat {
+        let ratio: CGFloat = 0.42
+        return min(420, sheetHeight * ratio)
+    }
+
+    private var contentHorizontalPadding: CGFloat {
+        sheetWidth > 700 ? 40 : (sheetWidth > 500 ? 28 : 18)
+    }
+
+    private var isCompact: Bool {
+        sheetWidth < 500
+    }
+
+    private var sourceFeed: Feed? {
+        feedService.feeds.first(where: { $0.id == article.feedId })
+    }
+
+    private var langConfig: (targetName: String, takeawaysHeading: String, summaryLabel: String) {
+        let lang = LocalizationManager.shared.currentLanguage
+        switch lang {
+        case .french: return ("français", "À retenir", "Résumé")
+        case .english: return ("English", "Key takeaways", "Summary")
+        case .spanish: return ("español", "Puntos clave", "Resumen")
+        case .german: return ("Deutsch", "Wichtigste Punkte", "Zusammenfassung")
+        case .italian: return ("italiano", "Da ricordare", "Riassunto")
+        case .portuguese: return ("português", "Pontos‑chave", "Resumo")
+        case .japanese: return ("日本語", "要点", "概要")
+        case .chinese: return ("中文", "要点", "摘要")
+        case .korean: return ("한국어", "핵심 요약", "요약")
+        case .russian: return ("русский", "Ключевые тезисы", "Резюме")
+        @unknown default: return ("English", "Key takeaways", "Summary")
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                // Hero image with rubber band stretch effect
+                GeometryReader { geo in
+                    let currentMinY = geo.frame(in: .global).minY
+                    let delta = currentMinY - heroRestMinY
+                    let stretch = max(0, delta)
+                    ZStack(alignment: .top) {
+                        headerImage
+                            .frame(width: geo.size.width, height: heroHeight + stretch)
+                            .clipped()
+                            .offset(y: -stretch)
+                        floatingGlassControls
+                    }
+                    .onAppear { heroRestMinY = currentMinY }
+                }
+                .frame(height: heroHeight)
+                VStack(alignment: .leading, spacing: isCompact ? 18 : 24) {
+                    articleMeta
+                    if isLoading {
+                        macLoadingSection
+                    } else if let error = errorMessage {
+                        macErrorSection(error)
+                    } else {
+                        macSummarySection
+                        if !takeaways.isEmpty {
+                            macTakeawaysSection
+                        }
+                    }
+                }
+                .padding(.horizontal, contentHorizontalPadding)
+                .padding(.top, isCompact ? 20 : 28)
+                .padding(.bottom, 48)
+            }
+        }
+        .frame(width: sheetWidth, height: sheetHeight)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(colorScheme == .dark
+                      ? Color(nsColor: .controlBackgroundColor)
+                      : Color(nsColor: .windowBackgroundColor))
+                .shadow(color: .black.opacity(0.35), radius: 80, y: 24)
+                .shadow(color: .black.opacity(0.15), radius: 20, y: 6)
+        )
+        .task { await generateSummary() }
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+            }
+        }
+    }
+
+    // MARK: - Floating Glass Controls
+
+    private var floatingGlassControls: some View {
+        HStack {
+            // Close button
+            glassButton(systemName: "xmark") {
+                onClose()
+            }
+            .keyboardShortcut(.escape, modifiers: [])
+
+            Spacer()
+
+            // Action buttons
+            HStack(spacing: 8) {
+                glassButton(systemName: article.isSaved ? "bookmark.fill" : "bookmark") {
+                    Task { await feedService.toggleFavorite(for: article) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+                        }
+                    }
+                }
+                .help(article.isSaved ? "Retirer des favoris" : "Ajouter aux favoris")
+
+                glassButton(systemName: "safari") {
+                    NSWorkspace.shared.open(article.url)
+                }
+                .help("Ouvrir dans Safari")
+
+                if #available(macOS 26.0, *) {
+                    ShareLink(item: article.url) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 13, weight: .semibold))
+                            .frame(width: 32, height: 32)
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(.regular.tint(.clear), in: .circle)
+                    .help("Partager")
+                } else {
+                    ShareLink(item: article.url) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 32, height: 32)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Partager")
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 14)
+    }
+
+    @ViewBuilder
+    private func glassButton(systemName: String, action: @escaping () -> Void) -> some View {
+        if #available(macOS 26.0, *) {
+            Button(action: action) {
+                Image(systemName: systemName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.tint(.clear), in: .circle)
+        } else {
+            Button(action: action) {
+                Image(systemName: systemName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - Subviews
+
+    private var headerImage: some View {
+        let images = allImageURLs
+        return Group {
+            if images.isEmpty {
+                macHeaderPlaceholder
+            } else if images.count == 1 {
+                singleHeaderImage(url: images[0])
+            } else {
+                headerCarousel(images: images)
+            }
+        }
+    }
+
+    private func singleHeaderImage(url: URL) -> some View {
+        AsyncImage(url: url) { phase in
+            switch phase {
+            case .success(let img):
+                img.resizable()
+                    .aspectRatio(16/9, contentMode: .fill)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: heroHeight)
+                    .clipped()
+            case .failure:
+                macHeaderPlaceholder
+            case .empty:
+                macHeaderPlaceholder
+                    .overlay { ProgressView() }
+            @unknown default:
+                macHeaderPlaceholder
+            }
+        }
+    }
+
+    private func headerCarousel(images: [URL]) -> some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            ZStack {
+                // Images
+                ForEach(Array(images.enumerated()), id: \.offset) { index, url in
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let img):
+                            img.resizable()
+                                .aspectRatio(16/9, contentMode: .fill)
+                                .frame(width: width, height: heroHeight)
+                                .clipped()
+                        case .failure:
+                            macHeaderPlaceholder
+                        case .empty:
+                            macHeaderPlaceholder
+                                .overlay { ProgressView() }
+                        @unknown default:
+                            macHeaderPlaceholder
+                        }
+                    }
+                    .opacity(index == currentImageIndex ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.3), value: currentImageIndex)
+                }
+
+                // Navigation arrows
+                HStack {
+                    // Left arrow
+                    Button {
+                        withAnimation { currentImageIndex = (currentImageIndex - 1 + images.count) % images.count }
+                        HapticFeedback.tap()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 30, height: 30)
+                            .background(.black.opacity(0.35), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .opacity(currentImageIndex > 0 ? 1 : 0.3)
+
+                    Spacer()
+
+                    // Right arrow
+                    Button {
+                        withAnimation { currentImageIndex = (currentImageIndex + 1) % images.count }
+                        HapticFeedback.tap()
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 30, height: 30)
+                            .background(.black.opacity(0.35), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .opacity(currentImageIndex < images.count - 1 ? 1 : 0.3)
+                }
+                .padding(.horizontal, 12)
+
+                // Page dots
+                VStack {
+                    Spacer()
+                    HStack(spacing: 6) {
+                        ForEach(0..<images.count, id: \.self) { i in
+                            Circle()
+                                .fill(i == currentImageIndex ? Color.white : Color.white.opacity(0.5))
+                                .frame(width: i == currentImageIndex ? 8 : 6, height: i == currentImageIndex ? 8 : 6)
+                                .animation(.easeInOut(duration: 0.2), value: currentImageIndex)
+                        }
+                    }
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 12)
+                    .background(.black.opacity(0.3), in: Capsule())
+                    .padding(.bottom, 12)
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 30)
+                    .onEnded { value in
+                        if value.translation.width < -50 && currentImageIndex < images.count - 1 {
+                            withAnimation { currentImageIndex += 1 }
+                            HapticFeedback.tap()
+                        } else if value.translation.width > 50 && currentImageIndex > 0 {
+                            withAnimation { currentImageIndex -= 1 }
+                            HapticFeedback.tap()
+                        }
+                    }
+            )
+        }
+        .frame(height: heroHeight)
+    }
+
+    private var macHeaderPlaceholder: some View {
+        LinearGradient(
+            colors: [
+                colorScheme == .dark ? Color.gray.opacity(0.1) : Color.gray.opacity(0.08),
+                colorScheme == .dark ? Color.gray.opacity(0.2) : Color.gray.opacity(0.15)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .frame(maxWidth: .infinity)
+        .frame(height: heroHeight)
+    }
+
+    private var articleMeta: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                if let feed = sourceFeed, let icon = faviconURL(for: feed) {
+                    AsyncImage(url: icon) { image in
+                        image.resizable().scaledToFit()
+                    } placeholder: {
+                        Color.gray.opacity(0.2)
+                    }
+                    .frame(width: 18, height: 18)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                }
+                if let feed = sourceFeed {
+                    Text(feed.title)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.secondary)
+                }
+                if let date = article.publishedAt {
+                    Text("·")
+                        .foregroundStyle(.tertiary)
+                    Text(date, style: .relative)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            Text(article.title.decodedHTMLEntities)
+                .font(isCompact ? .title2 : .title)
+                .fontWeight(.bold)
+                .lineLimit(4)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let author = article.author?.replacingOccurrences(of: #"<!\[CDATA\[|\]\]>"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines), !author.isEmpty {
+                Text(author)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var macLoadingSection: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Color.gray.opacity(0.15))
+                        .frame(width: 20, height: 20)
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Color.gray.opacity(0.15))
+                        .frame(width: 80, height: 18)
+                }
+                ForEach(0..<5, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(Color.gray.opacity(0.12))
+                        .frame(height: 16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.trailing, i == 4 ? 80 : (i == 2 ? 40 : 0))
+                }
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Color.gray.opacity(0.15))
+                        .frame(width: 20, height: 20)
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Color.gray.opacity(0.15))
+                        .frame(width: 100, height: 18)
+                }
+                ForEach(0..<3, id: \.self) { i in
+                    HStack(alignment: .top, spacing: 10) {
+                        Circle()
+                            .fill(Color.gray.opacity(0.15))
+                            .frame(width: 7, height: 7)
+                            .offset(y: 5)
+                        VStack(alignment: .leading, spacing: 6) {
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(Color.gray.opacity(0.12))
+                                .frame(height: 16)
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(Color.gray.opacity(0.12))
+                                .frame(height: 16)
+                                .padding(.trailing, i == 0 ? 60 : (i == 1 ? 100 : 30))
+                        }
+                    }
+                }
+            }
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(colorScheme == .dark
+                          ? Color.white.opacity(0.04)
+                          : Color.black.opacity(0.03))
+            )
+        }
+        .modifier(MacShimmerModifier())
+    }
+
+    private func macErrorSection(_ error: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+            Text(error)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button {
+                Task { await generateSummary() }
+            } label: {
+                Label("Retry", systemImage: "arrow.clockwise")
+                    .font(.subheadline.weight(.medium))
+            }
+            .buttonStyle(.bordered)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+    }
+
+    private var macSummarySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(langConfig.summaryLabel, systemImage: "text.alignleft")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.primary)
+            Text(summaryText)
+                .font(.title3)
+                .lineSpacing(8)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        }
+    }
+
+    private var macTakeawaysSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(langConfig.takeawaysHeading, systemImage: "lightbulb")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(Array(takeaways.enumerated()), id: \.offset) { _, point in
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 7, height: 7)
+                            .offset(y: 2)
+                        Text(point)
+                            .font(.title3)
+                            .lineSpacing(6)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(colorScheme == .dark
+                      ? Color.white.opacity(0.04)
+                      : Color.black.opacity(0.03))
+        )
+    }
+
+    // MARK: - AI Summary Generation
+
+    private func generateSummary() async {
+        isLoading = true
+        errorMessage = nil
+
+        let rawSource = article.contentText ?? article.summary ?? ""
+        let sourceText = cleanSourceText(rawSource)
+        let title = article.title.decodedHTMLEntities
+
+        guard !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            await MainActor.run {
+                errorMessage = "No content available to summarize."
+                isLoading = false
+            }
+            return
+        }
+
+        let config = langConfig
+        let delimiter = "\n===TAKEAWAYS===\n"
+        let system = """
+        You are an editor that produces EXACTLY two sections every time. \
+        You MUST always output both a summary AND key takeaways separated by the delimiter ===TAKEAWAYS===. \
+        Never skip the takeaways section. \
+        Translate to \(config.targetName) if needed. Output strictly in \(config.targetName) (except proper nouns). \
+        Output plain text only (no HTML, no CDATA, no XML, no Markdown, no bold, no headers, no brackets like [Résumé]). No links, no disclaimers.
+        """
+        let user = """
+        Title: \(title)
+
+        Text:
+        \(sourceText.prefix(12000))
+
+        You MUST output EXACTLY this format — both sections are MANDATORY:
+
+        [2-3 paragraphs summarizing the article in plain text]
+
+        ===TAKEAWAYS===
+
+        - [takeaway 1]
+        - [takeaway 2]
+        - [takeaway 3]
+        - [takeaway 4]
+        - [takeaway 5]
+        - [takeaway 6]
+
+        RULES:
+        1. The summary (before ===TAKEAWAYS===) is 2-3 short paragraphs. Plain text, no bullets.
+        2. After ===TAKEAWAYS=== write EXACTLY 5 to 8 bullet points starting with "- ". One per line.
+        3. BOTH sections are REQUIRED. Never omit the takeaways.
+        4. The delimiter ===TAKEAWAYS=== must appear exactly once, on its own line.
+        5. Respond strictly in \(config.targetName).
+        """
+
+        #if canImport(FoundationModels)
+        if #available(macOS 26.0, *) {
+            let model = SystemLanguageModel.default
+            switch model.availability {
+            case .available:
+                do {
+                    let session = LanguageModelSession(
+                        model: model,
+                        instructions: { system }
+                    )
+                    let response = try await session.respond(to: user)
+                    let content = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let parts = content.components(separatedBy: delimiter)
+                    var summary = parts.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    var takeawaysRaw = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+
+                    if takeawaysRaw.isEmpty {
+                        let lines = summary.components(separatedBy: .newlines)
+                        if let firstBulletIdx = lines.firstIndex(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("- ") || $0.trimmingCharacters(in: .whitespaces).hasPrefix("• ") }) {
+                            summary = lines[..<firstBulletIdx].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                            takeawaysRaw = lines[firstBulletIdx...].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                        }
+                    }
+
+                    let points = takeawaysRaw
+                        .components(separatedBy: .newlines)
+                        .map { $0.trimmingCharacters(in: .whitespaces) }
+                        .map { $0.hasPrefix("- ") ? String($0.dropFirst(2)) : $0 }
+                        .map { $0.hasPrefix("• ") ? String($0.dropFirst(2)) : $0 }
+                        .filter { !$0.isEmpty }
+
+                    await MainActor.run {
+                        summaryText = cleanDisplaySummary(summary)
+                        takeaways = points.map { cleanDisplaySummary($0) }
+                        isLoading = false
+                        HapticFeedback.success()
+                    }
+                    return
+                } catch {
+                    await MainActor.run {
+                        errorMessage = error.localizedDescription
+                        isLoading = false
+                        HapticFeedback.error()
+                    }
+                    return
+                }
+            default:
+                break
+            }
+        }
+        #endif
+
+        // Fallback: show existing summary if AI unavailable
+        await MainActor.run {
+            if let existing = article.summary {
+                summaryText = cleanDisplaySummary(existing.decodedHTMLEntities)
+                HapticFeedback.success()
+            } else {
+                errorMessage = "Apple Intelligence is not available on this device."
+            }
+            isLoading = false
+        }
+    }
+}
+
+private struct MacShimmerModifier: ViewModifier {
     @State private var phase: CGFloat = 0
     func body(content: Content) -> some View {
         content

@@ -409,6 +409,7 @@ enum LocalizationKey {
     case shareByMessage
     case writeXPost
     case copyURL
+    case spacebarPlayPause
     case newsletterTitle
     case newsletterTitleWithDate
     case newsletterGenerated
@@ -540,6 +541,8 @@ enum LocalizationKey {
     case signalsProbability
     case signalsMarkets
     case signalsNoComments
+    case signalsNewNotificationTitle
+    case signalsNewNotificationBody
 
     var french: String {
         switch self {
@@ -575,6 +578,7 @@ enum LocalizationKey {
         case .shareByMessage: return "Par message"
         case .writeXPost: return "Écrire un post X"
         case .copyURL: return "Copier l’URL"
+        case .spacebarPlayPause: return "Utilise la barre d’espace pour play / pause la vidéo"
         case .newsletterTitle: return "Ma newsletter"
         case .newsletterTitleWithDate: return "Ma newsletter — %@"
         case .newsletterGenerated: return "Générée:"
@@ -703,6 +707,8 @@ enum LocalizationKey {
         case .signalsProbability: return "Probabilité"
         case .signalsMarkets: return "Marchés"
         case .signalsNoComments: return "Aucun commentaire disponible"
+        case .signalsNewNotificationTitle: return "Nouveau signal"
+        case .signalsNewNotificationBody: return "%d nouveau(x) signal(aux) détecté(s)"
         }
     }
 
@@ -740,6 +746,7 @@ enum LocalizationKey {
         case .shareByMessage: return "By message"
         case .writeXPost: return "Write an X post"
         case .copyURL: return "Copy URL"
+        case .spacebarPlayPause: return "Use the spacebar to play / pause the video"
         case .newsletterTitle: return "My newsletter"
         case .newsletterTitleWithDate: return "My newsletter — %@"
         case .newsletterGenerated: return "Generated:"
@@ -868,6 +875,8 @@ enum LocalizationKey {
         case .signalsProbability: return "Probability"
         case .signalsMarkets: return "Markets"
         case .signalsNoComments: return "No comments available"
+        case .signalsNewNotificationTitle: return "New signal"
+        case .signalsNewNotificationBody: return "%d new signal(s) detected"
         }
     }
 
@@ -905,6 +914,7 @@ enum LocalizationKey {
         case .shareByMessage: return "Por mensaje"
         case .writeXPost: return "Escribir un post de X"
         case .copyURL: return "Copiar URL"
+        case .spacebarPlayPause: return "Usa la barra espaciadora para reproducir / pausar el vídeo"
         case .newsletterTitle: return "Mi newsletter"
         case .newsletterTitleWithDate: return "Mi newsletter — %@"
         case .newsletterGenerated: return "Generada:"
@@ -1033,6 +1043,8 @@ enum LocalizationKey {
         case .signalsProbability: return "Probabilidad"
         case .signalsMarkets: return "Mercados"
         case .signalsNoComments: return "No hay comentarios disponibles"
+        case .signalsNewNotificationTitle: return "Nueva señal"
+        case .signalsNewNotificationBody: return "%d nueva(s) señal(es) detectada(s)"
         }
     }
 
@@ -1070,6 +1082,7 @@ enum LocalizationKey {
         case .shareByMessage: return "Per Nachricht"
         case .writeXPost: return "Einen X-Post schreiben"
         case .copyURL: return "URL kopieren"
+        case .spacebarPlayPause: return "Leertaste drücken zum Abspielen / Pausieren"
         case .newsletterTitle: return "Mein Newsletter"
         case .newsletterTitleWithDate: return "Mein Newsletter — %@"
         case .newsletterGenerated: return "Erstellt:"
@@ -1198,6 +1211,8 @@ enum LocalizationKey {
         case .signalsProbability: return "Wahrscheinlichkeit"
         case .signalsMarkets: return "Märkte"
         case .signalsNoComments: return "Keine Kommentare verfügbar"
+        case .signalsNewNotificationTitle: return "Neues Signal"
+        case .signalsNewNotificationBody: return "%d neue(s) Signal(e) erkannt"
         }
     }
 
@@ -1235,6 +1250,7 @@ enum LocalizationKey {
         case .shareByMessage: return "Per messaggio"
         case .writeXPost: return "Scrivi un post su X"
         case .copyURL: return "Copia URL"
+        case .spacebarPlayPause: return "Usa la barra spaziatrice per riprodurre / mettere in pausa"
         case .newsletterTitle: return "La mia newsletter"
         case .newsletterTitleWithDate: return "La mia newsletter — %@"
         case .newsletterGenerated: return "Generata:"
@@ -1363,6 +1379,8 @@ enum LocalizationKey {
         case .signalsProbability: return "Probabilità"
         case .signalsMarkets: return "Mercati"
         case .signalsNoComments: return "Nessun commento disponibile"
+        case .signalsNewNotificationTitle: return "Nuovo segnale"
+        case .signalsNewNotificationBody: return "%d nuovo/i segnale/i rilevato/i"
         }
     }
 
@@ -1413,6 +1431,7 @@ enum LocalizationKey {
         case .shareByEmail: return "Enviar por email"
         case .shareByMessage: return "Por mensagem"
         case .copyURL: return "Copiar URL"
+        case .spacebarPlayPause: return "Usa a barra de espaço para reproduzir / pausar o vídeo"
         // Newsletter Schedule
         case .scheduleNewsletter: return "Agendar newsletter"
         case .scheduleNewsletterDescription: return "Escolha até 3 horários diários para gerar a newsletter automaticamente."
@@ -1504,6 +1523,8 @@ enum LocalizationKey {
         case .signalsProbability: return "Probabilidade"
         case .signalsMarkets: return "Mercados"
         case .signalsNoComments: return "Nenhum comentário disponível"
+        case .signalsNewNotificationTitle: return "Novo sinal"
+        case .signalsNewNotificationBody: return "%d novo(s) sinal(is) detectado(s)"
         default: return english
         }
     }
@@ -1555,6 +1576,7 @@ enum LocalizationKey {
         case .shareByEmail: return "メールで送信"
         case .shareByMessage: return "メッセージで送信"
         case .copyURL: return "URLをコピー"
+        case .spacebarPlayPause: return "スペースバーで再生 / 一時停止"
         // Newsletter Schedule
         case .scheduleNewsletter: return "ニュースレターをスケジュール"
         case .scheduleNewsletterDescription: return "ニュースレターを自動生成する最大3つの時刻を選択してください。"
@@ -1646,6 +1668,8 @@ enum LocalizationKey {
         case .signalsProbability: return "確率"
         case .signalsMarkets: return "マーケット"
         case .signalsNoComments: return "コメントはありません"
+        case .signalsNewNotificationTitle: return "新しいシグナル"
+        case .signalsNewNotificationBody: return "%d件の新しいシグナルを検出"
         default: return english
         }
     }
@@ -1697,6 +1721,7 @@ enum LocalizationKey {
         case .shareByEmail: return "通过电子邮件发送"
         case .shareByMessage: return "通过消息发送"
         case .copyURL: return "复制 URL"
+        case .spacebarPlayPause: return "按空格键播放 / 暂停视频"
         // Newsletter Schedule
         case .scheduleNewsletter: return "计划新闻简报"
         case .scheduleNewsletterDescription: return "选择最多3个每日时间来自动生成新闻简报。"
@@ -1788,6 +1813,8 @@ enum LocalizationKey {
         case .signalsProbability: return "概率"
         case .signalsMarkets: return "市场"
         case .signalsNoComments: return "暂无评论"
+        case .signalsNewNotificationTitle: return "新信号"
+        case .signalsNewNotificationBody: return "检测到%d个新信号"
         default: return english
         }
     }
@@ -1839,6 +1866,7 @@ enum LocalizationKey {
         case .shareByEmail: return "이메일로 보내기"
         case .shareByMessage: return "메시지로 보내기"
         case .copyURL: return "URL 복사"
+        case .spacebarPlayPause: return "스페이스바로 재생 / 일시정지"
         // Newsletter Schedule
         case .scheduleNewsletter: return "뉴스레터 예약"
         case .scheduleNewsletterDescription: return "뉴스레터를 자동 생성할 최대 3개의 시간을 선택하세요."
@@ -1930,6 +1958,8 @@ enum LocalizationKey {
         case .signalsProbability: return "확률"
         case .signalsMarkets: return "마켓"
         case .signalsNoComments: return "댓글이 없습니다"
+        case .signalsNewNotificationTitle: return "새로운 시그널"
+        case .signalsNewNotificationBody: return "%d개의 새로운 시그널 감지"
         default: return english
         }
     }
@@ -1981,6 +2011,7 @@ enum LocalizationKey {
         case .shareByEmail: return "Отправить по почте"
         case .shareByMessage: return "Отправить сообщением"
         case .copyURL: return "Копировать URL"
+        case .spacebarPlayPause: return "Нажмите пробел для воспроизведения / паузы"
         // Newsletter Schedule
         case .scheduleNewsletter: return "Запланировать рассылку"
         case .scheduleNewsletterDescription: return "Выберите до 3 ежедневных времён для автоматической генерации рассылки."
@@ -2072,6 +2103,8 @@ enum LocalizationKey {
         case .signalsProbability: return "Вероятность"
         case .signalsMarkets: return "Рынки"
         case .signalsNoComments: return "Комментарии недоступны"
+        case .signalsNewNotificationTitle: return "Новый сигнал"
+        case .signalsNewNotificationBody: return "Обнаружено %d новых сигналов"
         default: return english
         }
     }

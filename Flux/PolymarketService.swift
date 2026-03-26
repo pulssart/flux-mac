@@ -4,6 +4,9 @@
 import Foundation
 import Observation
 import OSLog
+#if canImport(UserNotifications)
+import UserNotifications
+#endif
 
 // MARK: - Modèles de données Polymarket
 
@@ -166,9 +169,40 @@ final class PolymarketService {
     var isLoading: Bool = false
     var lastError: String?
     var lastFetchedAt: Date?
+    var favoriteEventIds: Set<String> = []
 
     private var allEvents: [PolymarketEvent] = []
     private var fetchTask: Task<Void, Never>?
+    private var knownEventIds: Set<String> = []
+    private var hasPerformedInitialFetch: Bool = false
+
+    private static let favoritesKey = "polymarket.favoriteEventIds"
+
+    init() {
+        if let saved = UserDefaults.standard.stringArray(forKey: Self.favoritesKey) {
+            favoriteEventIds = Set(saved)
+        }
+    }
+
+    /// Les événements favoris actuellement actifs (triés par volume)
+    var favoriteEvents: [PolymarketEvent] {
+        allEvents
+            .filter { favoriteEventIds.contains($0.id) }
+            .sorted { $0.volume > $1.volume }
+    }
+
+    func isFavorite(_ event: PolymarketEvent) -> Bool {
+        favoriteEventIds.contains(event.id)
+    }
+
+    func toggleFavorite(_ event: PolymarketEvent) {
+        if favoriteEventIds.contains(event.id) {
+            favoriteEventIds.remove(event.id)
+        } else {
+            favoriteEventIds.insert(event.id)
+        }
+        UserDefaults.standard.set(Array(favoriteEventIds), forKey: Self.favoritesKey)
+    }
 
     /// Filtre les events par catégorie côté client
     func filterEvents(category: SignalCategory) {
@@ -208,6 +242,18 @@ final class PolymarketService {
                 let parsed = decoded.compactMap { Self.parseEvent($0) }
                 guard !Task.isCancelled else { return }
 
+                // Detect new signals (skip first fetch to avoid spamming)
+                let newIds = Set(parsed.map(\.id))
+                if hasPerformedInitialFetch {
+                    let freshIds = newIds.subtracting(knownEventIds)
+                    if !freshIds.isEmpty {
+                        let freshEvents = parsed.filter { freshIds.contains($0.id) }
+                        notifyNewSignals(freshEvents)
+                    }
+                }
+                knownEventIds = newIds
+                hasPerformedInitialFetch = true
+
                 self.allEvents = parsed
                 self.events = parsed
                 self.lastFetchedAt = Date()
@@ -220,6 +266,38 @@ final class PolymarketService {
                 logger.error("Polymarket fetch error: \(error.localizedDescription)")
             }
         }
+    }
+
+    // MARK: - Notifications
+
+    private var notificationsEnabled: Bool {
+        if UserDefaults.standard.object(forKey: "notificationsEnabled") == nil { return false }
+        return UserDefaults.standard.bool(forKey: "notificationsEnabled")
+    }
+
+    private func notifyNewSignals(_ newEvents: [PolymarketEvent]) {
+        guard notificationsEnabled, !newEvents.isEmpty else { return }
+        #if canImport(UserNotifications)
+        let lm = LocalizationManager.shared
+        let content = UNMutableNotificationContent()
+        if newEvents.count == 1, let first = newEvents.first {
+            content.title = lm.localizedString(.signalsNewNotificationTitle)
+            content.body = first.title
+        } else {
+            content.title = lm.localizedString(.signalsNewNotificationTitle)
+            let bodyTemplate = lm.localizedString(.signalsNewNotificationBody)
+            content.body = String(format: bodyTemplate, newEvents.count)
+        }
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let req = UNNotificationRequest(
+            identifier: "flux.signals.new.\(UUID().uuidString)",
+            content: content,
+            trigger: trigger
+        )
+        UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
+        logger.info("Sent notification for \(newEvents.count) new signal(s)")
+        #endif
     }
 
     // MARK: - Parsing

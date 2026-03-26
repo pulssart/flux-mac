@@ -893,9 +893,6 @@ struct AppSidebar: View {
         }
         .navigationTitle("")
         .onChange(of: selectedFeedId) { _, newValue in
-            if let fid = newValue, fid != Self.allFeedsId && fid != Self.favoritesId {
-                Task { await feedService.markFeedVisited(feedId: fid) }
-            }
             NotificationCenter.default.post(name: .closeWebViewOverlay, object: nil)
             if newValue != nil { selectedFolderId = nil }
             #if os(iOS)

@@ -41,6 +41,8 @@ struct ContentView: View {
         glassSmokeOpacity > 0.001
     }
 
+    @State private var macSheetState = iPadSheetState()
+
     var body: some View {
         #if os(iOS)
         IOSAppRootView()
@@ -80,8 +82,64 @@ struct ContentView: View {
             }
             #endif
             AppSidebar()
+                .environment(macSheetState)
             NotesWidgetSyncView().environment(feedService)
+            // Frosted overlay when article or YouTube sheet is open
+            if macSheetState.article != nil || macSheetState.youtubeURL != nil {
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .overlay(Color.black.opacity(macSheetState.youtubeURL != nil ? 0.35 : 0.15))
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        macSheetState.article = nil
+                        macSheetState.youtubeURL = nil
+                    }
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.25), value: macSheetState.article != nil || macSheetState.youtubeURL != nil)
+            }
+            // Article summary sheet overlay
+            if let article = macSheetState.article {
+                GeometryReader { proxy in
+                    MacArticleSummarySheet(
+                        article: article,
+                        feedService: feedService,
+                        containerWidth: proxy.size.width,
+                        containerHeight: proxy.size.height
+                    ) {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            macSheetState.article = nil
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .transition(.asymmetric(
+                    insertion: .move(edge: .bottom).combined(with: .opacity),
+                    removal: .move(edge: .bottom).combined(with: .opacity)
+                ))
+                .zIndex(100)
+            }
+            // YouTube cinema sheet overlay
+            if let youtubeURL = macSheetState.youtubeURL {
+                GeometryReader { proxy in
+                    MacYouTubeCinemaSheet(
+                        url: youtubeURL,
+                        containerWidth: proxy.size.width,
+                        containerHeight: proxy.size.height
+                    ) {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            macSheetState.youtubeURL = nil
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .transition(.asymmetric(
+                    insertion: .move(edge: .bottom).combined(with: .opacity),
+                    removal: .move(edge: .bottom).combined(with: .opacity)
+                ))
+                .zIndex(100)
+            }
         }
+        .animation(.easeInOut(duration: 0.3), value: macSheetState.article != nil || macSheetState.youtubeURL != nil)
         .onOpenURL { url in
             deepLinkRouter.receive(url)
         }
@@ -247,6 +305,213 @@ private extension ContentView {
 }
 
 #if canImport(AppKit)
+import WebKit
+
+struct MacYouTubeCinemaSheet: View {
+    let url: URL
+    let containerWidth: CGFloat
+    let containerHeight: CGFloat
+    let onClose: () -> Void
+    @State private var webViewRef: WKWebView?
+
+    private var sheetWidth: CGFloat {
+        let maxWidth: CGFloat = 1120
+        let horizontalPadding: CGFloat = 40
+        return min(maxWidth, containerWidth - horizontalPadding)
+    }
+
+    private var sheetHeight: CGFloat {
+        // 16:9 ratio
+        return sheetWidth * 9.0 / 16.0
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            ZStack(alignment: .topLeading) {
+                MacYouTubeWebView(url: url, webViewRef: $webViewRef)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                Button {
+                    webViewRef?.evaluateJavaScript("document.querySelector('video')?.pause()")
+                    webViewRef?.loadHTMLString("", baseURL: nil)
+                    onClose()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 30, height: 30)
+                        .background(.black.opacity(0.5), in: Circle())
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .padding(14)
+            }
+            .frame(width: sheetWidth, height: sheetHeight)
+            .background(Color.black)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: .black.opacity(0.4), radius: 30, x: 0, y: 10)
+
+            Text(LocalizationManager.shared.localizedString(.spacebarPlayPause))
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.6))
+        }
+    }
+}
+
+struct MacYouTubeWebView: NSViewRepresentable {
+    let url: URL
+    @Binding var webViewRef: WKWebView?
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.mediaTypesRequiringUserActionForPlayback = []
+        config.allowsAirPlayForMediaPlayback = true
+
+        // Inject CSS to hide chrome and fill video on page load
+        let cinemaCSS = """
+        ytd-masthead, #masthead, #masthead-container,
+        #secondary, #related, #comments, #meta,
+        #info, #below, ytd-watch-metadata,
+        .ytp-chrome-top, tp-yt-app-header,
+        #guide-button, ytd-mini-guide-renderer,
+        #page-manager > *:not(ytd-watch-flexy),
+        ytd-watch-flexy #columns #secondary {
+            display: none !important;
+        }
+        html, body, ytd-app, ytd-page-manager,
+        ytd-watch-flexy {
+            background: #000 !important;
+            overflow: hidden !important;
+        }
+        ytd-watch-flexy {
+            --ytd-watch-flexy-panel-max-height: 100vh !important;
+        }
+        ytd-watch-flexy #columns {
+            max-width: 100% !important;
+            padding: 0 !important;
+        }
+        ytd-watch-flexy #primary {
+            max-width: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+        #player-container-outer, #player-container-inner,
+        #ytd-player, .html5-video-container,
+        .html5-video-player {
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: 100vw !important;
+            max-height: 100vh !important;
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            z-index: 9999 !important;
+        }
+        video {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: contain !important;
+            position: absolute !important;
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%) !important;
+        }
+        .html5-video-player {
+            cursor: pointer !important;
+        }
+        .ytp-chrome-bottom {
+            z-index: 10000 !important;
+            bottom: 20px !important;
+        }
+        .ytp-gradient-bottom {
+            height: 120px !important;
+        }
+        .ytp-right-controls,
+        .ytp-settings-button,
+        .ytp-size-button,
+        .ytp-miniplayer-button,
+        .ytp-fullscreen-button,
+        .ytp-subtitles-button,
+        .ytp-watch-later-button,
+        .ytp-copylink-button,
+        .ytp-share-button-visible,
+        .ytp-overflow-button {
+            display: none !important;
+        }
+        .ytp-large-play-button {
+            z-index: 10001 !important;
+        }
+        """
+        let cssScript = WKUserScript(
+            source: """
+            const style = document.createElement('style');
+            style.textContent = `\(cinemaCSS)`;
+            document.documentElement.appendChild(style);
+            """,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        )
+        config.userContentController.addUserScript(cssScript)
+
+        // Also re-apply after page finishes loading (SPA navigation)
+        let reapplyScript = WKUserScript(
+            source: """
+            const observer = new MutationObserver(() => {
+                if (!document.getElementById('flux-cinema-css')) {
+                    const s = document.createElement('style');
+                    s.id = 'flux-cinema-css';
+                    s.textContent = `\(cinemaCSS)`;
+                    document.head.appendChild(s);
+                }
+                // Click theater mode button if available
+                const theaterBtn = document.querySelector('.ytp-size-button');
+                if (theaterBtn) theaterBtn.click();
+            });
+            observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
+
+            // Attempt theater mode after short delay
+            setTimeout(() => {
+                const btn = document.querySelector('.ytp-size-button');
+                if (btn) btn.click();
+            }, 2000);
+            """,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        )
+        config.userContentController.addUserScript(reapplyScript)
+
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.setValue(false, forKey: "drawsBackground")
+        webView.navigationDelegate = context.coordinator
+        webView.load(URLRequest(url: url))
+        DispatchQueue.main.async { webViewRef = webView }
+        return webView
+    }
+
+    func updateNSView(_ nsView: WKWebView, context: Context) {}
+
+    static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
+        nsView.evaluateJavaScript("document.querySelector('video')?.pause()")
+        nsView.stopLoading()
+        nsView.loadHTMLString("", baseURL: nil)
+    }
+
+    class Coordinator: NSObject, WKNavigationDelegate {
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            // Extra JS injection after full page load
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                webView.evaluateJavaScript("""
+                    document.querySelectorAll('ytd-masthead, #masthead, #secondary, #comments, #related, #below, #meta, #info, ytd-watch-metadata').forEach(e => e.remove());
+                    const btn = document.querySelector('.ytp-size-button');
+                    if (btn) btn.click();
+                """)
+            }
+        }
+    }
+}
+
 private func configureWindowBlur(enabled: Bool, colorScheme: ColorScheme) {
     let windows = NSApplication.shared.windows.filter { $0.contentView != nil }
     if windows.isEmpty {
