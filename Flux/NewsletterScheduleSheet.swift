@@ -1,4 +1,6 @@
 // NewsletterScheduleSheet.swift
+// Disponible uniquement sur iPad
+#if os(iOS)
 import SwiftUI
 
 struct NewsletterScheduleSheet: View {
@@ -86,5 +88,6 @@ struct NewsletterScheduleSheet: View {
         isPresented = false
     }
 }
+#endif // os(iOS)
 
 

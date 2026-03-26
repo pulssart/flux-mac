@@ -10,26 +10,97 @@ struct AISettingsInlineSheet: View {
     @Binding var isPresented: Bool
     @Binding var showOnboarding: Bool
     @AppStorage("windowBlurEnabled") private var windowBlurEnabled: Bool = false
+    @AppStorage("windowBlurTintOpacity") private var windowBlurTintOpacity: Double = 0.48
     @AppStorage("hideTitleOnThumbnails") private var hideTitleOnThumbnails: Bool = false
     @AppStorage("notificationsEnabled") private var notificationsEnabled: Bool = false
     @AppStorage("hapticsEnabled") private var hapticsEnabled: Bool = true
-    @AppStorage("reader.openArticleInReaderFirst") private var openArticleInReaderFirst: Bool = true
-    @AppStorage("reader.reduceOverlaysEnabled") private var reduceOverlaysEnabled: Bool = false
+    @AppStorage("reader.alwaysOpenInBrowser") private var alwaysOpenInBrowser: Bool = false
+    @AppStorage("badgeReadLaterEnabled") private var badgeReadLaterEnabled: Bool = true
+    @AppStorage("filterAdsEnabled") private var filterAdsEnabled: Bool = false
     @State private var selectedLanguage: SupportedLanguage = .english
     @State private var error: String?
-    @State private var saveSuccess: String?
+    #if os(macOS)
+    @State private var showSafariExtensionSheet = false
+    #endif
 
     private let lm = LocalizationManager.shared
-    
+
+    private var safariExtensionRowTitle: String {
+        switch LocalizationManager.shared.currentLanguage {
+        case .french:
+            return "Extension Safari"
+        default:
+            return "Safari extension"
+        }
+    }
+
+    private var blurTintTitle: String {
+        switch LocalizationManager.shared.currentLanguage {
+        case .french:
+            return "Opacité de la teinte"
+        default:
+            return "Tint opacity"
+        }
+    }
+
+    private var transparentLabel: String {
+        switch LocalizationManager.shared.currentLanguage {
+        case .french:
+            return "Transparent"
+        default:
+            return "Transparent"
+        }
+    }
+
+    private var opaqueLabel: String {
+        switch LocalizationManager.shared.currentLanguage {
+        case .french:
+            return "Opaque"
+        default:
+            return "Opaque"
+        }
+    }
+
+    private var blurTintPercentText: String {
+        "\(Int(min(max(windowBlurTintOpacity, 0), 0.99) * 100))%"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(lm.localizedString(.settings)).font(.title3).bold()
             Toggle(lm.localizedString(.windowBlurToggle), isOn: $windowBlurEnabled)
-                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                .toggleStyle(LeadingSwitchToggleStyle())
+            if windowBlurEnabled {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text(blurTintTitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text(blurTintPercentText)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Slider(value: $windowBlurTintOpacity, in: 0...0.99)
+
+                    HStack {
+                        Text(transparentLabel)
+                        Spacer()
+                        Text(opaqueLabel)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                .padding(.leading, 38)
+                .padding(.top, -4)
+                .padding(.bottom, 2)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
             Toggle(lm.localizedString(.hideTitleOnThumbnails), isOn: $hideTitleOnThumbnails)
-                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                .toggleStyle(LeadingSwitchToggleStyle())
             Toggle(lm.localizedString(.notificationsToggle), isOn: $notificationsEnabled)
-                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                .toggleStyle(LeadingSwitchToggleStyle())
                 .onChange(of: notificationsEnabled) { _, newValue in
                     if newValue {
                         feedService.requestNotificationPermissionIfNeeded()
@@ -37,12 +108,17 @@ struct AISettingsInlineSheet: View {
                 }
             #if os(macOS)
             Toggle(lm.localizedString(.hapticsToggle), isOn: $hapticsEnabled)
-                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                .toggleStyle(LeadingSwitchToggleStyle())
             #endif
-            Toggle(lm.localizedString(.openArticleFirstToggle), isOn: $openArticleInReaderFirst)
-                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
-            Toggle(lm.localizedString(.reduceOverlaysToggle), isOn: $reduceOverlaysEnabled)
-                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+            Toggle(lm.localizedString(.alwaysOpenInBrowserToggle), isOn: $alwaysOpenInBrowser)
+                .toggleStyle(LeadingSwitchToggleStyle())
+            Toggle(lm.localizedString(.badgeReadLaterToggle), isOn: $badgeReadLaterEnabled)
+                .toggleStyle(LeadingSwitchToggleStyle())
+                .onChange(of: badgeReadLaterEnabled) { _, _ in
+                    feedService.refreshAppBadge()
+                }
+            Toggle(lm.localizedString(.filterAdsToggle), isOn: $filterAdsEnabled)
+                .toggleStyle(LeadingSwitchToggleStyle())
             Divider()
             
             // Sélection de la langue
@@ -53,11 +129,8 @@ struct AISettingsInlineSheet: View {
                 
                 Picker(lm.localizedString(.language), selection: $selectedLanguage) {
                     ForEach(SupportedLanguage.allCases, id: \.self) { language in
-                        HStack {
-                            Text(language.flag)
-                            Text(language.displayName)
-                        }
-                        .tag(language)
+                        Text("\(language.flag) \(language.displayName)")
+                            .tag(language)
                     }
                 }
                 .pickerStyle(.menu)
@@ -68,11 +141,29 @@ struct AISettingsInlineSheet: View {
             Divider()
             
             // Section Import/Export
-            ConfigurationImportExportView()
+            ConfigurationImportExportView(language: selectedLanguage)
                 .environment(feedService)
             
             Divider()
             
+            // What's New
+            Button(action: {
+                isPresented = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    NotificationCenter.default.post(name: .showWhatsNew, object: nil)
+                }
+            }) {
+                HStack(spacing: 10) {
+                    Image(systemName: "gift")
+                        .foregroundStyle(.pink)
+                    Text("What's New")
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
             // Relancer l'onboarding
             Button(action: {
                 isPresented = false
@@ -106,7 +197,39 @@ struct AISettingsInlineSheet: View {
                 }
             }
             .buttonStyle(.plain)
+
+            Button(action: {
+                showSafariExtensionSheet = true
+            }) {
+                HStack(spacing: 10) {
+                    Image(systemName: "safari")
+                        .foregroundStyle(.blue)
+                    Text(safariExtensionRowTitle)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
             #endif
+
+            Button(action: {
+                if let url = URL(string: "https://apps.apple.com/us/app/flux-rss/id6752223666?mt=12&action=write-review") {
+                    #if os(macOS)
+                    NSWorkspace.shared.open(url)
+                    #endif
+                }
+            }) {
+                HStack(spacing: 10) {
+                    Image(systemName: "star.fill")
+                        .foregroundStyle(.yellow)
+                    Text(lm.localizedString(.rateApp))
+                    Spacer()
+                    Image(systemName: "arrow.up.forward.square")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
 
             if let error {
                 Text(error)
@@ -114,12 +237,6 @@ struct AISettingsInlineSheet: View {
                     .foregroundStyle(.red)
             }
             
-            if let saveSuccess = saveSuccess {
-                Text(saveSuccess)
-                    .font(.caption)
-                    .foregroundStyle(.green)
-            }
-
             HStack {
                 Spacer()
                 Button(lm.localizedString(.cancel)) { isPresented = false }
@@ -128,12 +245,19 @@ struct AISettingsInlineSheet: View {
             }
         }
         .padding(24)
-        .frame(minWidth: 420)
+        .frame(minWidth: 520)
+        #if os(macOS)
+        .sheet(isPresented: $showSafariExtensionSheet) {
+            SafariExtensionAnnouncementSheet(isPresented: $showSafariExtensionSheet)
+        }
+        #endif
         .onAppear {
             // Charger la langue actuelle depuis les paramètres
-            if let settings = try? modelContext.fetch(FetchDescriptor<Settings>()).first,
-               let preferredLang = settings.preferredLangs.first {
-                selectedLanguage = SupportedLanguage(rawValue: preferredLang) ?? .english
+            if let settings = try? modelContext.fetch(FetchDescriptor<Settings>()).first {
+                if let preferredLang = settings.preferredLangs.first {
+                    selectedLanguage = SupportedLanguage(rawValue: preferredLang) ?? .english
+                }
+                filterAdsEnabled = settings.filterAdsEnabled ?? false
             } else {
                 selectedLanguage = .english // Langue par défaut
             }
@@ -142,6 +266,11 @@ struct AISettingsInlineSheet: View {
             // Appliquer la langue instantanément
             LocalizationManager.shared.currentLanguage = newLanguage
         }
+        .onChange(of: windowBlurEnabled) { _, newValue in
+            if newValue == false {
+                windowBlurTintOpacity = min(max(windowBlurTintOpacity, 0), 0.99)
+            }
+        }
     }
 
     private func save() {
@@ -149,7 +278,8 @@ struct AISettingsInlineSheet: View {
             // Sauvegarder la langue sélectionnée
             let settings = (try modelContext.fetch(FetchDescriptor<Settings>()).first) ?? Settings()
             settings.preferredLangs = [selectedLanguage.rawValue]
-            
+            settings.filterAdsEnabled = filterAdsEnabled
+
             // Sauvegarder les paramètres
             if ((try? modelContext.fetch(FetchDescriptor<Settings>()))?.isEmpty ?? true) {
                 modelContext.insert(settings)
@@ -158,18 +288,23 @@ struct AISettingsInlineSheet: View {
             
             // Mettre à jour la langue dans le gestionnaire de localisation
             LocalizationManager.shared.currentLanguage = selectedLanguage
-            
-            // Afficher le message de succès
-            saveSuccess = lm.localizedString(.settingsSaved)
             error = nil
-            
-            // Fermer la modale après un délai
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                isPresented = false
-            }
+            isPresented = false
             
         } catch {
             self.error = "\(lm.localizedString(.saveError)): \(error.localizedDescription)"
+        }
+    }
+}
+
+private struct LeadingSwitchToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 10) {
+            Toggle("", isOn: configuration.$isOn)
+                .labelsHidden()
+                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+            configuration.label
+            Spacer(minLength: 0)
         }
     }
 }
