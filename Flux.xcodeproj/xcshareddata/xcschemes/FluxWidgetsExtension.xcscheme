@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "2620"
+   LastUpgradeVersion = "2630"
    wasCreatedForAppExtension = "YES"
    version = "2.0">
    <BuildAction
@@ -19,20 +19,6 @@
                BlueprintIdentifier = "7AWID0302E6AAAAA00WID001"
                BuildableName = "FluxWidgetsExtension.appex"
                BlueprintName = "FluxWidgetsExtension"
-               ReferencedContainer = "container:Flux.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "YES"
-            buildForProfiling = "YES"
-            buildForArchiving = "YES"
-            buildForAnalyzing = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "7AA355132E58BD2600D70E5E"
-               BuildableName = "Flux.app"
-               BlueprintName = "Flux"
                ReferencedContainer = "container:Flux.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -58,8 +44,9 @@
       allowLocationSimulation = "YES"
       launchAutomaticallySubstyle = "2">
       <RemoteRunnable
-         runnableDebuggingMode = "2"
-         BundleIdentifier = "com.apple.springboard">
+         runnableDebuggingMode = "1"
+         BundleIdentifier = "com.apple.widgetkit.simulator"
+         RemotePath = "/System/Library/CoreServices/WidgetKit Simulator.app/Contents/MacOS/WidgetKit Simulator">
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "7AWID0302E6AAAAA00WID001"
@@ -68,21 +55,7 @@
             ReferencedContainer = "container:Flux.xcodeproj">
          </BuildableReference>
       </RemoteRunnable>
-      <MacroExpansion>
-         <BuildableReference
-            BuildableIdentifier = "primary"
-            BlueprintIdentifier = "7AA355132E58BD2600D70E5E"
-            BuildableName = "Flux.app"
-            BlueprintName = "Flux"
-            ReferencedContainer = "container:Flux.xcodeproj">
-         </BuildableReference>
-      </MacroExpansion>
       <EnvironmentVariables>
-         <EnvironmentVariable
-            key = "_XCWidgetKind"
-            value = ""
-            isEnabled = "YES">
-         </EnvironmentVariable>
          <EnvironmentVariable
             key = "_XCWidgetDefaultView"
             value = "timeline"
@@ -96,6 +69,11 @@
          <EnvironmentVariable
             key = "_XCWidgetKind"
             value = "DernierArticleWidget"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "IDEPreferLogStreaming"
+            value = "YES"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>

@@ -5,6 +5,10 @@ import SwiftSoup
 import OSLog
 import Combine
 
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
+
 #if os(macOS)
 import WebKit
 #elseif os(iOS)
@@ -20,31 +24,153 @@ struct ArticlesView: View {
     let feedId: UUID?
     let folderId: UUID?
     let showOnlyFavorites: Bool
+    @Binding private var deepLinkRequest: ArticleOpenRequest?
     @State private var webURL: URL? = nil
     @State private var webStartInReaderMode: Bool = true
+    @Environment(iPadSheetState.self) private var sheetState: iPadSheetState?
     @State private var loadingPhrase: String? = nil
     @State private var phraseIndex: Int = 0
     @State private var loadingTicker = Timer.publish(every: 1.6, on: .main, in: .common).autoconnect()
+    @State private var isWindowLiveResizing = false
+    // Cached sorted articles — updated only when data changes, not on geometry changes
+    @State private var cachedArticlesSorted: [Article] = []
+    @State private var cachedMusicFeedIds: Set<UUID> = []
+    @AppStorage("reader.alwaysOpenInBrowser") private var alwaysOpenInBrowser: Bool = false
     // Filtre temporel global (mur et vues par flux): Aujourd'hui, Hier, Tous
     enum TimeFilter: String, CaseIterable, Identifiable { case today, yesterday, all; var id: String { rawValue } }
     @State private var timeFilter: TimeFilter = .all
-    
+    @AppStorage("filterAdsEnabled") private var filterAdsEnabled: Bool = false
+
     // Détermine rapidement portrait/paysage (utile ailleurs mais pas suffisant pour iPad Split View)
     private var isPortrait: Bool {
         verticalSizeClass == .regular
     }
+
+    // iPhone: petit padding latéral pour une lecture plus confortable.
+    private var fullWidthSidePadding: CGFloat {
+        #if os(iOS)
+        12
+        #else
+        24
+        #endif
+    }
+
+    private var feedWallSidePadding: CGFloat {
+        #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            return 24
+        }
+        #endif
+        return fullWidthSidePadding
+    }
+
+    private var isIPadDevice: Bool {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .pad
+        #else
+        false
+        #endif
+    }
+
+    private var heroHorizontalInset: CGFloat {
+        #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            return 0
+        }
+        return isFeedWall ? 0 : -feedWallSidePadding
+        #else
+        return 0
+        #endif
+    }
+
+    private var topContentPadding: CGFloat {
+        #if os(iOS)
+        0
+        #else
+        16
+        #endif
+    }
+
+    private var isFeedWall: Bool {
+        feedId == nil && !showOnlyFavorites
+    }
+
+    private var isMusicFeed: Bool {
+        guard let fid = feedId else { return false }
+        return feedService.isMusicFeed(feedId: fid)
+    }
+
+    private var shouldUseUniformCardsLayout: Bool {
+        guard showOnlyFavorites == false, folderId == nil, let fid = feedId else { return false }
+        guard let feed = feedService.feeds.first(where: { $0.id == fid }) else { return false }
+
+        if isTwitterURL(feed.siteURL) || isTwitterURL(feed.feedURL) {
+            return true
+        }
+
+        return feedService.articles.contains { article in
+            article.feedId == fid && isTwitterURL(article.url)
+        }
+    }
+
+    private var scrollIdentity: String {
+        "\(feedId?.uuidString ?? "all-feeds")::\(folderId?.uuidString ?? "no-folder")::\(showOnlyFavorites)"
+    }
+
+    private func regularGridRowSpacing(for availableWidth: CGFloat) -> CGFloat {
+        availableWidth < 700 ? 12 : 16
+    }
+
+    private func sectionSpacing(for availableWidth: CGFloat, wallLayout: FeedWallGridLayout) -> CGFloat {
+        return wallLayout.rowSpacing
+    }
+
+    private func feedWallLayout(for availableWidth: CGFloat) -> FeedWallGridLayout {
+        let spacing: CGFloat = 24
+        let minCardWidth: CGFloat = 280
+        let maxColumnCount = 5
+        let rawColumnCount = Int((availableWidth + spacing) / (minCardWidth + spacing))
+        let columnCount = max(1, min(maxColumnCount, rawColumnCount))
+
+        return FeedWallGridLayout(
+            columnCount: columnCount,
+            minCardWidth: minCardWidth,
+            columnSpacing: spacing,
+            rowSpacing: spacing
+        )
+    }
     
-    // Padding latéral pour mode pleine largeur sous la sidebar
-    // Si vous souhaitez garder un léger air, mettez 12; pour coller au bord, laissez 0.
-    private var fullWidthSidePadding: CGFloat { 24 }
-    
-    init(feedId: UUID? = nil, folderId: UUID? = nil, showOnlyFavorites: Bool = false) {
+    init(
+        feedId: UUID? = nil,
+        folderId: UUID? = nil,
+        showOnlyFavorites: Bool = false,
+        deepLinkRequest: Binding<ArticleOpenRequest?> = .constant(nil)
+    ) {
         self.feedId = feedId
         self.folderId = folderId
         self.showOnlyFavorites = showOnlyFavorites
+        self._deepLinkRequest = deepLinkRequest
     }
     
-    private var articlesSorted: [Article] {
+    /// IDs des flux musique (Apple Music / Spotify) à exclure des vues agrégées
+    private var musicFeedIds: Set<UUID> { cachedMusicFeedIds }
+
+    private var articlesSorted: [Article] { cachedArticlesSorted }
+
+    private var musicPlaylistTracks: [(url: URL, artworkURL: URL?)] {
+        guard let feedId, feedService.isAppleMusicFeed(feedId: feedId) else { return [] }
+        return orderedAppleMusicTracks(for: feedId, from: feedService.articles)
+    }
+
+    /// Recompute articles — called only when data/filter changes, NOT on geometry changes
+    private func recomputeArticles() {
+        let newMusicIds = Set(
+            feedService.feeds
+                .filter { feedService.isMusicFeedURL($0.feedURL) || feedService.isMusicFeedURL($0.siteURL ?? $0.feedURL) }
+                .map(\.id)
+        )
+        cachedMusicFeedIds = newMusicIds
+
         let base: [Article]
         if showOnlyFavorites {
             base = feedService.favoriteArticles
@@ -54,12 +180,12 @@ struct ArticlesView: View {
         } else if let feedId = feedId {
             base = feedService.articles.filter { $0.feedId == feedId }
         } else {
-            base = feedService.articles
+            base = feedService.articles.filter { !newMusicIds.contains($0.feedId) }
         }
-        // Appliquer filtre temporel
+        let effectiveFilter = isMusicFeed ? .all : timeFilter
         let filteredBase: [Article] = {
-            let start = startDate(for: timeFilter)
-            let end = endDate(for: timeFilter)
+            let start = startDate(for: effectiveFilter)
+            let end = endDate(for: effectiveFilter)
             return base.filter { article in
                 let date = article.publishedAt ?? .distantPast
                 if let s = start, date < s { return false }
@@ -71,9 +197,15 @@ struct ArticlesView: View {
         let articles = filteredBase.filter { article in
             let s = article.url.absoluteString.lowercased()
             if s.contains("youtube") && s.contains("/shorts/") { return false }
+            if filterAdsEnabled && AdKeywordFilter.isAd(article) { return false }
             return true
         }
-        return articles.sorted { ($0.publishedAt ?? .distantPast) > ($1.publishedAt ?? .distantPast) }
+        // Déduplication par URL pour éviter les doublons visuels
+        var seenURLs = Set<String>()
+        let deduped = articles
+            .sorted { ($0.publishedAt ?? .distantPast) > ($1.publishedAt ?? .distantPast) }
+            .filter { seenURLs.insert($0.url.absoluteString).inserted }
+        cachedArticlesSorted = deduped
     }
 
     // Calcule la date de début en fonction du filtre
@@ -258,24 +390,50 @@ struct ArticlesView: View {
                 }
             } else {
                 baseScrollView
-                    .id(feedId)
+                    .id(scrollIdentity)
                     .toolbar { toolbarContent }
+                    #if os(macOS)
+                    .toolbarBackground(.hidden, for: .windowToolbar)
+                    .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+                    #endif
                     .overlay { emptyFavoritesOverlay }
             }
+        }
+        .onAppear {
+            recomputeArticles()
+            consumeDeepLinkRequestIfNeeded()
+        }
+        .onChange(of: feedId) { _, _ in recomputeArticles() }
+        .onChange(of: folderId) { _, _ in recomputeArticles() }
+        .onChange(of: showOnlyFavorites) { _, _ in recomputeArticles() }
+        .onChange(of: feedService.articles.count) { _, _ in recomputeArticles() }
+        .onChange(of: feedService.feeds.count) { _, _ in recomputeArticles() }
+        .onChange(of: timeFilter) { _, _ in recomputeArticles() }
+        .onChange(of: feedService.favoriteArticles.count) { _, _ in recomputeArticles() }
+        .onChange(of: deepLinkRequest?.id) { _, _ in
+            consumeDeepLinkRequestIfNeeded()
         }
     }
 
     private var baseScrollView: some View {
         GeometryReader { geometry in
+            let availableWidth = max(geometry.size.width - (feedWallSidePadding * 2), 0)
+            let wallLayout = feedWallLayout(for: availableWidth)
             ScrollView {
-                VStack(spacing: 16) {
-                    mainContentView()
+                #if os(iOS)
+                if isIPadDevice {
+                    ipadScrollContent(availableWidth: availableWidth, wallLayout: wallLayout)
+                } else {
+                    standardScrollContent(availableWidth: availableWidth, wallLayout: wallLayout)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(minHeight: geometry.size.height)
-                .padding(.horizontal, fullWidthSidePadding)
-                .padding(.top, 16)
+                #else
+                standardScrollContent(availableWidth: availableWidth, wallLayout: wallLayout)
+                #endif
             }
+            #if os(iOS)
+            .contentMargins(.top, isIPadDevice ? 0 : nil, for: .scrollContent)
+            .ignoresSafeArea(.container, edges: isIPadDevice ? .top : [])
+            #endif
         }
         .onReceive(NotificationCenter.default.publisher(for: .closeWebViewOverlay)) { _ in
             withAnimation(.easeInOut(duration: 0.28)) { webURL = nil }
@@ -292,31 +450,155 @@ struct ArticlesView: View {
         .onChange(of: feedService.isRefreshing) { _, newVal in
             if newVal == false { loadingPhrase = nil }
         }
+        #if os(macOS)
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willStartLiveResizeNotification)) { notification in
+            guard shouldTrackLiveResize(notification) else { return }
+            isWindowLiveResizing = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEndLiveResizeNotification)) { notification in
+            guard shouldTrackLiveResize(notification) else { return }
+            isWindowLiveResizing = false
+        }
+        #endif
     }
+
+    @ViewBuilder
+    private func standardScrollContent(availableWidth: CGFloat, wallLayout: FeedWallGridLayout) -> some View {
+        VStack(spacing: 16) {
+            mainContentView(availableWidth: availableWidth, wallLayout: wallLayout)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, feedWallSidePadding)
+        .padding(.top, topContentPadding)
+    }
+
+    #if os(iOS)
+    @ViewBuilder
+    private func ipadScrollContent(availableWidth: CGFloat, wallLayout: FeedWallGridLayout) -> some View {
+        let gridSpacing = sectionSpacing(for: availableWidth, wallLayout: wallLayout)
+        let heroHeight: CGFloat = 667
+        VStack(spacing: gridSpacing) {
+            // Stretchable header: GeometryReader inline, zero @State
+            if !articlesSorted.isEmpty && shouldUseUniformCardsLayout == false {
+                if let first = articlesSorted.first {
+                    GeometryReader { geo in
+                        let minY = geo.frame(in: .global).minY
+                        let stretch = max(0, minY)
+                        ArticleHeroCard(article: first, isLiveResizing: isWindowLiveResizing, isFullBleedHeader: true) { url in
+                            openArticle(url)
+                        }
+                        .frame(width: geo.size.width, height: heroHeight + stretch)
+                        .clipped()
+                        .offset(y: -stretch)
+                    }
+                    .frame(height: heroHeight)
+                    .id("hero-\(scrollIdentity)-\(first.id.uuidString)")
+                }
+            }
+
+            VStack(spacing: 16) {
+                mainContentView(availableWidth: availableWidth, wallLayout: wallLayout, skipHero: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, feedWallSidePadding)
+        }
+    }
+    #endif
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         if webURL == nil {
+            #if os(iOS)
+            if !isMusicFeed {
+                ToolbarItem(placement: .principal) {
+                    HStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        timeScopePickerView
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+            }
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                toolbarActionItems
+            }
+            #else
             ToolbarItemGroup(placement: .primaryAction) {
                 toolbarItems
             }
+            #endif
         }
     }
 
     @ViewBuilder
     private var toolbarItems: some View {
+        if !isMusicFeed {
+            timeScopePickerView
+        }
+
+        toolbarActionItems
+    }
+
+    private var timeScopePickerView: some View {
         let lm = LocalizationManager.shared
         let isWall = (feedId == nil && !showOnlyFavorites)
         let labels = computeToolbarLabels(isWall: isWall, lm: lm)
 
-        TimeScopePicker(
+        return TimeScopePicker(
             selection: $timeFilter,
             todayLabel: labels.0,
             yesterdayLabel: labels.1,
             allLabel: labels.2
         )
+    }
+
+    @ViewBuilder
+    private var toolbarActionItems: some View {
+        let lm = LocalizationManager.shared
+        let isWall = (feedId == nil && !showOnlyFavorites)
+        let isNewsWall = isWall && folderId == nil
+        let hasUnreadArticles = feedService.articles.contains(where: { $0.isRead == false })
+        let markAllAsSeenText = lm.localizedString(.markAllAsSeen)
+
+        if isNewsWall {
+            Button(action: {
+                Task { await feedService.markAllFeedsVisited() }
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "eye.slash")
+                    Text(markAllAsSeenText)
+                }
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .font(.system(size: 13, weight: .semibold))
+            }
+            .buttonStyle(.glassProminent)
+            .disabled(hasUnreadArticles == false)
+            .help(lm.localizedString(.markAllAsSeenHelp))
+        }
 
         if let fid = feedId, !showOnlyFavorites {
+            // Bouton "Ouvrir dans Apple Music" pour les flux Apple Music
+            if feedService.isAppleMusicFeed(feedId: fid),
+               let feed = feedService.feeds.first(where: { $0.id == fid }),
+               let feedURL = feed.siteURL ?? URL(string: feed.feedURL.absoluteString) {
+                Button(action: {
+                    #if os(macOS)
+                    NSWorkspace.shared.open(feedURL)
+                    #elseif os(iOS)
+                    UIApplication.shared.open(feedURL)
+                    #endif
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.up.right")
+                        Text("Apple Music")
+                    }
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .font(.system(size: 13, weight: .semibold))
+                }
+                .buttonStyle(.glassProminent)
+            }
+
             Button(action: {
                 Task { try? await feedService.refreshArticles(for: fid) }
             }) {
@@ -396,11 +678,26 @@ struct ArticlesView: View {
     }
 
     @ViewBuilder
-    private func mainContentView() -> some View {
+    private func mainContentView(availableWidth: CGFloat, wallLayout: FeedWallGridLayout, skipHero: Bool = false) -> some View {
         if !articlesSorted.isEmpty {
+            let contentSpacing = sectionSpacing(for: availableWidth, wallLayout: wallLayout)
+            let content = VStack(alignment: .leading, spacing: contentSpacing) {
+                if shouldUseUniformCardsLayout == false && !skipHero {
+                    heroSectionView()
+                }
+                gridSectionView(
+                    fixedLayout: wallLayout,
+                    includeFirstArticle: shouldUseUniformCardsLayout
+                )
+            }
             Group {
-                heroSectionView()
-                gridSectionView()
+                content
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .transaction { transaction in
+                if isWindowLiveResizing {
+                    transaction.animation = nil
+                }
             }
         } else if feedService.isRefreshing && !showOnlyFavorites {
             loadingView()
@@ -412,43 +709,27 @@ struct ArticlesView: View {
     @ViewBuilder
     private func heroSectionView() -> some View {
         if let first = articlesSorted.first {
-            ArticleHeroCard(article: first) { url in
-                if isYouTubeURL(url) {
-                    withAnimation(.easeInOut(duration: 0.28)) {
-                        webStartInReaderMode = false
-                        webURL = url
-                    }
-                } else {
-                    withAnimation(.easeInOut(duration: 0.28)) {
-                        webStartInReaderMode = true
-                        webURL = url
-                    }
-                }
+            ArticleHeroCard(article: first, isLiveResizing: isWindowLiveResizing, isFullBleedHeader: isIPadDevice) { url in
+                openArticle(url)
             }
+            .id("hero-\(scrollIdentity)-\(first.id.uuidString)")
+            .padding(.horizontal, heroHorizontalInset)
             .zIndex(0)
-            .padding(.bottom, 8)
         }
     }
 
     @ViewBuilder
-    private func gridSectionView() -> some View {
-        let others = Array(articlesSorted.dropFirst(1))
+    private func gridSectionView(
+        fixedLayout: FeedWallGridLayout,
+        includeFirstArticle: Bool = false
+    ) -> some View {
+        let gridArticles = includeFirstArticle ? articlesSorted : Array(articlesSorted.dropFirst(1))
         Group {
-            if others.isEmpty {
+            if gridArticles.isEmpty {
                 EmptyView()
             } else {
-                GridSection(articles: others, isFeedWall: feedId == nil && !showOnlyFavorites) { url in
-                    if isYouTubeURL(url) {
-                        withAnimation(.easeInOut(duration: 0.28)) {
-                            webStartInReaderMode = false
-                            webURL = url
-                        }
-                    } else {
-                        withAnimation(.easeInOut(duration: 0.28)) {
-                            webStartInReaderMode = true
-                            webURL = url
-                        }
-                    }
+                GridSection(articles: gridArticles, isFeedWall: isFeedWall, isLiveResizing: isWindowLiveResizing, layout: fixedLayout) { url in
+                    openArticle(url)
                 }
             }
         }
@@ -470,7 +751,7 @@ struct ArticlesView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, minHeight: 320)
     }
 
     @ViewBuilder
@@ -506,7 +787,7 @@ struct ArticlesView: View {
                 .buttonStyle(.plain)
                 .disabled(feedService.isRefreshing)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 360)
         }
     }
 
@@ -514,6 +795,97 @@ struct ArticlesView: View {
         let host = url.host?.lowercased() ?? ""
         return host.contains("youtube.com") || host.contains("youtu.be")
     }
+
+    private func isAppleMusicURL(_ url: URL) -> Bool {
+        let host = url.host?.lowercased() ?? ""
+        return host == "music.apple.com" || host == "itunes.apple.com"
+    }
+
+    private func isSpotifyURL(_ url: URL) -> Bool {
+        let host = url.host?.lowercased() ?? ""
+        return host == "open.spotify.com" || host == "play.spotify.com"
+    }
+
+    private func openExternally(_ url: URL) {
+        #if os(macOS)
+        if
+            isAppleMusicURL(url),
+            let musicAppURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Music")
+        {
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            NSWorkspace.shared.open([url], withApplicationAt: musicAppURL, configuration: configuration) { _, _ in }
+            return
+        }
+        if
+            isSpotifyURL(url),
+            let spotifyAppURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.spotify.client")
+        {
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            NSWorkspace.shared.open([url], withApplicationAt: spotifyAppURL, configuration: configuration) { _, _ in }
+            return
+        }
+        NSWorkspace.shared.open(url)
+        #elseif os(iOS)
+        UIApplication.shared.open(url)
+        #endif
+    }
+
+    private func openArticle(_ url: URL, forceReaderFirst: Bool = true) {
+        if isAppleMusicURL(url) {
+            Task { await MusicKitService.shared.play(from: url) }
+            return
+        }
+        if isSpotifyURL(url) {
+            openExternally(url)
+            return
+        }
+        #if os(iOS)
+        if isIPadDevice && isYouTubeURL(url) {
+            sheetState?.youtubeURL = url
+            return
+        }
+        #endif
+
+        if isYouTubeURL(url) || alwaysOpenInBrowser {
+            openExternally(url)
+            return
+        }
+
+        #if os(iOS)
+        if isIPadDevice {
+            // iPad: open summary sheet instead of WebDrawer
+            if let article = articlesSorted.first(where: { $0.url == url }) {
+                sheetState?.article = article
+            } else {
+                // Fallback: open in Safari if article not found
+                openExternally(url)
+            }
+            return
+        }
+        #endif
+
+        NotificationCenter.default.post(name: .collapseSidebar, object: nil)
+
+        withAnimation(.easeInOut(duration: 0.28)) {
+            webStartInReaderMode = forceReaderFirst
+            webURL = url
+        }
+    }
+
+    private func consumeDeepLinkRequestIfNeeded() {
+        guard let request = deepLinkRequest else { return }
+        deepLinkRequest = nil
+        openArticle(request.url, forceReaderFirst: request.forceReaderFirst)
+    }
+
+    #if os(macOS)
+    private func shouldTrackLiveResize(_ notification: Notification) -> Bool {
+        guard let window = notification.object as? NSWindow else { return false }
+        return window == NSApp.keyWindow || window == NSApp.mainWindow || window.isKeyWindow || window.isMainWindow
+    }
+    #endif
 }
 
 #if os(macOS) || os(iOS)
@@ -758,28 +1130,26 @@ private extension View {
     func skeletonPulse() -> some View {
         self.modifier(Shimmer())
     }
-}
-
-private struct CardSizeModifier: ViewModifier {
-    let hasDescription: Bool
-    let isYouTube: Bool
-    private let classicHeight: CGFloat = 320
-    private let compactHeight: CGFloat = 220
-    private let youtubeCompactHeight: CGFloat = 250
-    func body(content: Content) -> some View {
-        Group {
-            if hasDescription {
-                content.frame(height: classicHeight)
-            } else {
-                if isYouTube {
-                    content.frame(height: youtubeCompactHeight)
-                } else {
-                    content.frame(height: compactHeight)
-                }
-            }
+    @ViewBuilder
+    func compositingGroupIfNeeded(_ enabled: Bool) -> some View {
+        if enabled {
+            self.compositingGroup()
+        } else {
+            self
+        }
+    }
+    @ViewBuilder
+    func shadowIfNeeded(_ enabled: Bool, color: Color, radius: CGFloat, x: CGFloat, y: CGFloat) -> some View {
+        if enabled {
+            self.shadow(color: color, radius: radius, x: x, y: y)
+        } else {
+            self
         }
     }
 }
+
+
+private let standardCardVerticalPadding: CGFloat = 6
 
 private func faviconURL(for feed: Feed) -> URL? {
     if let explicit = feed.faviconURL { return explicit }
@@ -796,81 +1166,134 @@ private func faviconURL(for feed: Feed) -> URL? {
 
 private struct ArticleHeroCard: View {
     let article: Article
+    let isLiveResizing: Bool
+    var isFullBleedHeader: Bool = false
     let onOpenURL: (URL) -> Void
+    @AppStorage("reader.alwaysOpenInBrowser") private var alwaysOpenInBrowser: Bool = false
     @Environment(FeedService.self) private var feedService
     @Environment(\.colorScheme) private var colorScheme
-    @AppStorage("windowBlurEnabled") private var windowBlurEnabled: Bool = false
     @AppStorage("hideTitleOnThumbnails") private var hideTitleOnThumbnails: Bool = false
     @State private var isHovering = false
 
-    private var cardBaseColor: Color { colorScheme == .dark ? .black : .white }
-    private var cardBackgroundStyle: AnyShapeStyle { windowBlurEnabled ? AnyShapeStyle(.thinMaterial) : AnyShapeStyle(cardBaseColor) }
     private var shouldShowOverlay: Bool { !hideTitleOnThumbnails || isHovering }
+    private var isAppleMusicArticle: Bool { isAppleMusic(article.url) }
+    private var heroArtworkURL: URL? { isYouTube(article.url) ? nil : article.imageURL }
+    private var heroBlurScale: CGFloat { isAppleMusicArticle ? 2.2 : 1.28 }
+    private var heroBlurRadius: CGFloat { isAppleMusicArticle ? 140 : 85 }
+    private var heroForegroundScale: CGFloat { isAppleMusicArticle ? 1.16 : 1.0 }
+
+    @ViewBuilder
+    private func heroArtworkFill(in geometry: GeometryProxy) -> some View {
+        if isLiveResizing {
+            // During resize: skip expensive blur, show simple fill
+            HeroImage(url: heroArtworkURL, pageURL: article.url, referer: article.url)
+                .scaleEffect(heroForegroundScale)
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .clipped()
+                .overlay(heroBackdropShade)
+        } else {
+            HeroImage(url: heroArtworkURL, pageURL: article.url, referer: article.url)
+                .scaleEffect(heroBlurScale)
+                .blur(radius: heroBlurRadius)
+                .saturation(isAppleMusicArticle ? 1.18 : 1.0)
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .overlay(heroBackdropShade)
+                .allowsHitTesting(false)
+
+            HeroImage(url: heroArtworkURL, pageURL: article.url, referer: article.url)
+                .scaleEffect(heroForegroundScale)
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .clipped()
+        }
+    }
+
+    private var heroBackdropShade: some View {
+        LinearGradient(
+            colors: [
+                Color.black.opacity(colorScheme == .dark ? 0.16 : 0.06),
+                Color.black.opacity(colorScheme == .dark ? 0.30 : 0.12),
+                Color.black.opacity(colorScheme == .dark ? 0.44 : 0.18)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    private var heroContentShade: some View {
+        LinearGradient(
+            colors: [
+                Color.black.opacity(0.0),
+                Color.black.opacity(0.25),
+                Color.black.opacity(0.55)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .allowsHitTesting(false)
+    }
+
+    @ViewBuilder
+    private var heroTextContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                if let feed = feedService.feeds.first(where: { $0.id == article.feedId }), let icon = faviconURL(for: feed) {
+                    AsyncImage(url: icon) { image in
+                        image.resizable().scaledToFit()
+                    } placeholder: {
+                        Color.white.opacity(0.15)
+                    }
+                    .frame(width: 16, height: 16)
+                    .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                } else {
+                    Image(systemName: "globe")
+                        .font(.caption2)
+                        .foregroundStyle(Color.white.opacity(0.9))
+                        .frame(width: 16, height: 16)
+                }
+                if let date = article.publishedAt {
+                    Text(date, style: .date)
+                        .font(.caption)
+                        .foregroundStyle(Color.white.opacity(0.9))
+                }
+                Spacer()
+            }
+
+            Text(article.title.decodedHTMLEntities)
+                .font(.largeTitle)
+                .fontWeight(.regular)
+                .lineLimit(2)
+                .foregroundStyle(Color.white)
+
+            if let summary = article.summary {
+                Text(cleanDisplaySummary(summary.decodedHTMLEntities))
+                    .font(.title3)
+                    .foregroundStyle(Color.white.opacity(0.7))
+                    .lineSpacing(2)
+                    .lineLimit(2)
+            }
+        }
+        .padding(24)
+    }
     
     var body: some View {
         Button(action: {
-            onOpenURL(article.url)
+            if !isAppleMusicArticle {
+                onOpenURL(article.url)
+            }
         }) {
             ZStack(alignment: .bottomLeading) {
-                HeroImage(url: isYouTube(article.url) ? nil : article.imageURL, pageURL: article.url, referer: article.url)
-                    .frame(height: 500)
-                    .clipped()
+                GeometryReader { geometry in
+                    heroArtworkFill(in: geometry)
+                }
 
                 if shouldShowOverlay {
-                    LinearGradient(
-                        colors: [
-                            Color.black.opacity(0.0),
-                            Color.black.opacity(0.25),
-                            Color.black.opacity(0.55)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .allowsHitTesting(false)
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(spacing: 8) {
-                            if let feed = feedService.feeds.first(where: { $0.id == article.feedId }), let icon = faviconURL(for: feed) {
-                                AsyncImage(url: icon) { image in
-                                    image.resizable().scaledToFit()
-                                } placeholder: {
-                                    Color.white.opacity(0.15)
-                                }
-                                .frame(width: 16, height: 16)
-                                .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-                            } else {
-                                Image(systemName: "globe")
-                                    .font(.caption2)
-                                    .foregroundStyle(Color.white.opacity(0.9))
-                                    .frame(width: 16, height: 16)
-                            }
-                            if let date = article.publishedAt {
-                                Text(date, style: .date)
-                                    .font(.caption)
-                                    .foregroundStyle(Color.white.opacity(0.9))
-                            }
-                            Spacer()
-                        }
-
-                        Text(article.title.decodedHTMLEntities)
-                            .font(.largeTitle)
-                            .fontWeight(.regular)
-                            .lineLimit(2)
-                            .foregroundStyle(Color.white)
-
-                        if let summary = article.summary {
-                            Text(summary.decodedHTMLEntities)
-                                .font(.title3)
-                                .foregroundStyle(Color.white.opacity(0.7))
-                                .lineSpacing(2)
-                                .lineLimit(2)
-                        }
-                    }
-                    .padding(24)
+                    heroContentShade
+                    heroTextContent
                 }
             }
-            .frame(height: 500)
-            .animation(.easeInOut(duration: 0.2), value: shouldShowOverlay)
+            .frame(maxWidth: .infinity, maxHeight: isFullBleedHeader ? .infinity : .none)
+            .frame(height: isFullBleedHeader ? nil : 500)
+            .animation(isLiveResizing ? nil : .easeInOut(duration: 0.2), value: shouldShowOverlay)
         }
         .buttonStyle(.plain)
         .onDrag {
@@ -879,25 +1302,53 @@ private struct ArticleHeroCard: View {
         #if os(macOS)
         .overlay(NonMovableWindowArea().allowsHitTesting(false))
         #endif
-        .background(cardBackgroundStyle)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color.black.opacity(colorScheme == .dark ? 0.34 : 0.12))
+        .clipShape(RoundedRectangle(cornerRadius: isFullBleedHeader ? 0 : 14, style: .continuous))
         .overlay(alignment: .topLeading) {
             if isHovering {
                 ReadLaterButton(article: article)
                     .padding(16)
             }
         }
+        .overlay {
+            if isAppleMusicArticle {
+                AppleMusicPlayButton(article: article)
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if isAppleMusicArticle && MusicKitService.shared.isPlaying && MusicKitService.shared.currentArticleURL == article.url {
+                MusicEqualizerBars()
+                    .padding(16)
+            }
+        }
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.black.opacity(isHovering ? 0.50 : 0.15), lineWidth: 1)
+            RoundedRectangle(cornerRadius: isFullBleedHeader ? 0 : 14, style: .continuous)
+                .stroke(Color.black.opacity(isHovering ? 0.50 : 0.15), lineWidth: isFullBleedHeader ? 0 : 1)
         )
-        .compositingGroup()
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.14 : 0.09), radius: 8, x: 0, y: 3)
+        .compositingGroupIfNeeded(!isLiveResizing && !isFullBleedHeader)
+        .shadowIfNeeded(!isLiveResizing && !isFullBleedHeader, color: .black.opacity(colorScheme == .dark ? 0.14 : 0.09), radius: 8, x: 0, y: 3)
         .onHover { hover in
             isHovering = hover
         }
+        .onChange(of: isLiveResizing) { _, newValue in
+            if newValue {
+                isHovering = false
+            }
+        }
         .contextMenu {
             let lm = LocalizationManager.shared
+            if !alwaysOpenInBrowser && !isAppleMusicArticle && !isYouTube(article.url) {
+                Button(action: {
+                    #if os(macOS)
+                    NSWorkspace.shared.open(article.url)
+                    #elseif os(iOS)
+                    UIApplication.shared.open(article.url)
+                    #endif
+                }) {
+                    Label(lm.localizedString(.openInBrowser), systemImage: "safari")
+                }
+                Divider()
+            }
             Button(action: {
                 #if os(macOS)
                 if let service = NSSharingService(named: .composeEmail) {
@@ -969,183 +1420,132 @@ private struct ArticleHeroCard: View {
 private struct ArticleGridCard: View {
     let article: Article
     let isFeedWall: Bool
+    let isLiveResizing: Bool
     let onOpenURL: (URL) -> Void
     let onOversized: ((UUID) -> Void)?
     @Environment(\.colorScheme) private var colorScheme
     @Environment(FeedService.self) private var feedService
     @AppStorage("windowBlurEnabled") private var windowBlurEnabled: Bool = false
     @AppStorage("hideTitleOnThumbnails") private var hideTitleOnThumbnails: Bool = false
+    @AppStorage("reader.alwaysOpenInBrowser") private var alwaysOpenInBrowser: Bool = false
     @State private var isHovering = false
     private let maxAspectRatio: CGFloat = 2.0
     private var cardBaseColor: Color { colorScheme == .dark ? .black : .white }
-    private var cardBackgroundStyle: AnyShapeStyle { windowBlurEnabled ? AnyShapeStyle(.thinMaterial) : AnyShapeStyle(cardBaseColor) }
+    private var cardBackgroundStyle: AnyShapeStyle { windowBlurEnabled && !isLiveResizing ? AnyShapeStyle(.thinMaterial) : AnyShapeStyle(cardBaseColor) }
     private let gridImageHeight: CGFloat = 180
     private let gridAspectRatio: CGFloat = 1.0
     private let compactAspectRatio: CGFloat = 4.0/3.0
+    // Aspect ratio for editorial wall cards (portrait-ish) — replaces fixed 320px height
+    private let editorialCardRatio: CGFloat = 1.0
     
     private var descriptionText: String? {
         if let summary = article.summary?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
-            return summary
+            return cleanDisplaySummary(summary)
         }
         if let content = article.contentText?.trimmingCharacters(in: .whitespacesAndNewlines), !content.isEmpty {
-            return content
+            return cleanDisplaySummary(content)
         }
         return nil
     }
-    private var hasDescription: Bool { descriptionText != nil }
+    private var hasDescription: Bool { descriptionText != nil || isAppleMusicArticle }
     private var isYouTubeArticle: Bool { isYouTube(article.url) }
+    private var isAppleMusicArticle: Bool { isAppleMusic(article.url) }
     private var shouldShowOverlay: Bool { !hideTitleOnThumbnails || isHovering }
+    private var gridArtworkScale: CGFloat { isAppleMusicArticle ? 1.38 : 1.0 }
+
+    @ViewBuilder
+    private func feedSourceLabel(_ feed: Feed) -> some View {
+        HStack(spacing: 6) {
+            if let icon = faviconURL(for: feed) {
+                AsyncImage(url: icon) { image in
+                    image.resizable().scaledToFit()
+                } placeholder: {
+                    Color.white.opacity(0.14)
+                }
+                .frame(width: 13, height: 13)
+                .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+            } else {
+                Image(systemName: "globe")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .frame(width: 13, height: 13)
+            }
+
+            Text(feed.title)
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.75))
+                .lineLimit(1)
+        }
+    }
     
     var body: some View {
         Button(action: {
-            onOpenURL(article.url)
+            if !isAppleMusicArticle {
+                onOpenURL(article.url)
+            }
         }) {
-            Group {
-                if hasDescription {
-                    ZStack(alignment: .bottomLeading) {
-                        // Image en pleine hauteur - contrainte à la géométrie de la carte
-                        GeometryReader { geometry in
-                            ProgressiveBlurImage(
-                                url: isYouTube(article.url) ? nil : article.imageURL,
-                                pageURL: article.url,
-                                referer: article.url,
-                                showOverlay: shouldShowOverlay,
-                                onSizeKnown: { size in
-                                    let w = max(size.width, 1)
-                                    let h = max(size.height, 1)
-                                    let ratio = w / h
-                                    if ratio > self.maxAspectRatio || (h / w) < 0.45 { self.onOversized?(article.id) }
-                                }
-                            )
-                            .frame(width: geometry.size.width, height: geometry.size.height)
-                            .clipped()
-                        }
+            ZStack(alignment: .bottomLeading) {
+                GeometryReader { geometry in
+                    ArticleImage(
+                        url: isYouTubeArticle ? nil : article.imageURL,
+                        pageURL: article.url,
+                        referer: article.url,
+                        onSizeKnown: nil
+                    )
+                    .scaledToFill()
+                    .scaleEffect(gridArtworkScale)
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .clipped()
+                }
 
-                        if shouldShowOverlay {
-                            // Texte par-dessus l'image
-                            VStack(alignment: .leading, spacing: 8) {
-                                Spacer()
+                if shouldShowOverlay {
+                    LinearGradient(
+                        colors: [
+                            Color.black.opacity(0.0),
+                            Color.black.opacity(0.18),
+                            Color.black.opacity(0.42),
+                            Color.black.opacity(0.58)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .allowsHitTesting(false)
 
-                                Text(article.title.decodedHTMLEntities)
-                                    .font(.title3)
-                                    .fontWeight(.semibold)
-                                    .lineLimit(3)
-                                    .multilineTextAlignment(.leading)
-                                    .foregroundStyle(.white)
-                                    .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Spacer()
 
-                                if let feed = feedService.feeds.first(where: { $0.id == article.feedId }) {
-                                    Text(feed.title)
-                                        .font(.caption)
-                                        .foregroundStyle(.white.opacity(0.75))
-                                        .lineLimit(1)
-                                }
-                            }
-                            .padding(12)
+                        Text(article.title.decodedHTMLEntities)
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                            .lineLimit(3)
+                            .multilineTextAlignment(.leading)
+                            .foregroundStyle(.white)
+
+                        if let feed = feedService.feeds.first(where: { $0.id == article.feedId }) {
+                            feedSourceLabel(feed)
                         }
                     }
-                    .frame(height: 320)
-                    .animation(.easeInOut(duration: 0.2), value: shouldShowOverlay)
-                } else {
-                    if isYouTube(article.url) {
-                        if isFeedWall {
-                            ZStack(alignment: .bottomLeading) {
-                                ArticleImage(url: nil, pageURL: article.url, referer: article.url)
-                                    .scaledToFill()
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                    .clipped()
-                                if isHovering {
-                                    LinearGradient(
-                                        colors: [
-                                            Color.black.opacity(0.0),
-                                            Color.black.opacity(0.4),
-                                            Color.black.opacity(0.7)
-                                        ],
-                                        startPoint: .center,
-                                        endPoint: .bottom
-                                    )
-                                    .allowsHitTesting(false)
-                                    Text(article.title)
-                                        .font(.title2)
-                                        .fontWeight(.regular)
-                                        .lineLimit(3)
-                                        .foregroundStyle(Color.white)
-                                        .padding(12)
-                                }
-                            }
-                            .frame(height: 220)
-                        } else {
-                            ZStack(alignment: .bottomLeading) {
-                                ArticleImage(url: nil, pageURL: article.url, referer: article.url)
-                                    .scaledToFill()
-                                    .frame(height: 220)
-                                    .clipped()
-                                if isHovering {
-                                    LinearGradient(
-                                        colors: [
-                                            Color.black.opacity(0.0),
-                                            Color.black.opacity(0.4),
-                                            Color.black.opacity(0.7)
-                                        ],
-                                        startPoint: .center,
-                                        endPoint: .bottom
-                                    )
-                                    .allowsHitTesting(false)
-                                    Text(article.title)
-                                        .font(.title2)
-                                        .fontWeight(.regular)
-                                        .lineLimit(3)
-                                        .foregroundStyle(Color.white)
-                                        .padding(12)
-                                }
-                            }
-                        }
-                    } else {
-                        ZStack(alignment: .bottomLeading) {
-                            ArticleImage(url: isYouTube(article.url) ? nil : article.imageURL, pageURL: article.url, referer: article.url, onSizeKnown: { size in
-                                let w = max(size.width, 1)
-                                let h = max(size.height, 1)
-                                let ratio = w / h
-                                if ratio > self.maxAspectRatio || (h / w) < 0.45 { self.onOversized?(article.id) }
-                            })
-                                .scaledToFill()
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .clipped()
-                            if shouldShowOverlay {
-                                LinearGradient(
-                                    colors: [
-                                        Color.black.opacity(0.0),
-                                        Color.black.opacity(0.4),
-                                        Color.black.opacity(0.7)
-                                    ],
-                                    startPoint: .center,
-                                    endPoint: .bottom
-                                )
-                                .allowsHitTesting(false)
-                                Text(article.title.decodedHTMLEntities)
-                                    .font(.title2)
-                                    .fontWeight(.regular)
-                                    .lineLimit(3)
-                                    .foregroundStyle(Color.white)
-                                    .padding(12)
-                            }
-                        }
-                        .modifier(CardSizeModifier(hasDescription: hasDescription, isYouTube: isYouTubeArticle))
-                        .padding(.vertical, 2)
-                        .buttonStyle(.plain)
-                        .background(cardBackgroundStyle)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(Color.black.opacity(isHovering ? 0.50 : 0.15), lineWidth: 1)
-                        )
-                        .compositingGroup()
-                        .animation(.easeInOut(duration: 0.2), value: shouldShowOverlay)
-                        .onHover { hover in isHovering = hover }
-                        .onDrag { NSItemProvider(object: article.url as NSURL) }
+                    .padding(12)
+                }
+
+                if isYouTubeArticle {
+                    ZStack {
+                        Circle()
+                            .fill(Color.black.opacity(0.58))
+                        Circle()
+                            .stroke(Color.white.opacity(0.22), lineWidth: 1)
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .offset(x: 2)
                     }
+                    .frame(width: 58, height: 58)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .allowsHitTesting(false)
                 }
             }
+            .frame(maxWidth: .infinity)
+            .aspectRatio(1.0, contentMode: .fit)
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
@@ -1163,17 +1563,45 @@ private struct ArticleGridCard: View {
                     .padding(10)
             }
         }
+        .overlay {
+            if isAppleMusicArticle {
+                AppleMusicPlayButton(article: article)
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if isAppleMusicArticle && MusicKitService.shared.isPlaying && MusicKitService.shared.currentArticleURL == article.url {
+                MusicEqualizerBars()
+                    .padding(16)
+            }
+        }
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color.black.opacity(isHovering ? 0.50 : 0.15), lineWidth: 1)
         )
-        .compositingGroup()
-        .padding(.vertical, 6)
+        .compositingGroupIfNeeded(!isLiveResizing)
+        .padding(.vertical, isFeedWall ? 0 : standardCardVerticalPadding)
         .onHover { hover in
             isHovering = hover
         }
+        .onChange(of: isLiveResizing) { _, newValue in
+            if newValue {
+                isHovering = false
+            }
+        }
         .contextMenu {
             let lm = LocalizationManager.shared
+            if !alwaysOpenInBrowser && !isAppleMusicArticle && !isYouTube(article.url) {
+                Button(action: {
+                    #if os(macOS)
+                    NSWorkspace.shared.open(article.url)
+                    #elseif os(iOS)
+                    UIApplication.shared.open(article.url)
+                    #endif
+                }) {
+                    Label(lm.localizedString(.openInBrowser), systemImage: "safari")
+                }
+                Divider()
+            }
             Button(action: {
                 #if os(macOS)
                 if let service = NSSharingService(named: .composeEmail) {
@@ -1242,56 +1670,92 @@ private struct ArticleGridCard: View {
     }
 }
 
+private func cleanDisplaySummary(_ text: String) -> String {
+    var result = text
+    // Strip CDATA wrappers
+    result = result.replacingOccurrences(of: #"<!\[CDATA\[|\]\]>"#, with: "", options: .regularExpression)
+    // Strip HTML tags
+    result = result.replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
+    // Strip markdown bold/italic
+    result = result.replacingOccurrences(of: "**", with: "")
+    result = result.replacingOccurrences(of: "__", with: "")
+    result = result.replacingOccurrences(of: #"(?<=\S)\*(?=\S)"#, with: "", options: .regularExpression)
+    result = result.replacingOccurrences(of: #"\s*\*\s*"#, with: " ", options: .regularExpression)
+    // Strip section headers like [Résumé], [Summary], ## Résumé, etc.
+    result = result.replacingOccurrences(of: #"\[(?:Résumé|Summary|Resumen|Zusammenfassung|Riassunto|Resumo|概要|摘要|요약|Резюме)\]"#, with: "", options: [.regularExpression, .caseInsensitive])
+    result = result.replacingOccurrences(of: #"\[(?:À retenir|Key takeaways?|Puntos clave|Wichtigste Punkte|Da ricordare|Pontos[‑-]chave|要点|핵심 요약|Ключевые тезисы)\]"#, with: "", options: [.regularExpression, .caseInsensitive])
+    // Strip markdown headers (## Résumé, etc.) line by line
+    let lines = result.components(separatedBy: .newlines)
+    let filtered = lines.filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("#") }
+    result = filtered.joined(separator: "\n")
+    // Decode HTML entities
+    result = result.replacingOccurrences(of: "&amp;", with: "&")
+    result = result.replacingOccurrences(of: "&lt;", with: "<")
+    result = result.replacingOccurrences(of: "&gt;", with: ">")
+    result = result.replacingOccurrences(of: "&quot;", with: "\"")
+    result = result.replacingOccurrences(of: "&#39;", with: "'")
+    result = result.replacingOccurrences(of: "&apos;", with: "'")
+    result = result.replacingOccurrences(of: "&nbsp;", with: " ")
+    // Collapse whitespace
+    result = result.replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+    result = result.replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+    return result.trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+/// Strips HTML, CDATA, and common RSS artifacts from raw article content before sending to AI
+private func cleanSourceText(_ text: String) -> String {
+    var result = text
+    // Strip CDATA wrappers
+    result = result.replacingOccurrences(of: #"<!\[CDATA\[|\]\]>"#, with: "", options: .regularExpression)
+    // Strip HTML tags
+    result = result.replacingOccurrences(of: #"<[^>]+>"#, with: " ", options: .regularExpression)
+    // Decode HTML entities
+    result = result.replacingOccurrences(of: "&amp;", with: "&")
+    result = result.replacingOccurrences(of: "&lt;", with: "<")
+    result = result.replacingOccurrences(of: "&gt;", with: ">")
+    result = result.replacingOccurrences(of: "&quot;", with: "\"")
+    result = result.replacingOccurrences(of: "&#39;", with: "'")
+    result = result.replacingOccurrences(of: "&apos;", with: "'")
+    result = result.replacingOccurrences(of: "&nbsp;", with: " ")
+    result = result.replacingOccurrences(of: #"&#(\d+);"#, with: "", options: .regularExpression)
+    // Collapse whitespace
+    result = result.replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: .regularExpression)
+    result = result.replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+    return result.trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+private struct FeedWallGridLayout {
+    let columnCount: Int
+    let minCardWidth: CGFloat
+    let columnSpacing: CGFloat
+    let rowSpacing: CGFloat
+
+    var columns: [GridItem] {
+        Array(repeating: GridItem(.flexible(minimum: minCardWidth), spacing: columnSpacing, alignment: .top), count: columnCount)
+    }
+
+    var id: Int {
+        columnCount
+    }
+}
+
 private struct GridSection: View {
     let articles: [Article]
     let isFeedWall: Bool
+    let isLiveResizing: Bool
+    let layout: FeedWallGridLayout
     let onOpenURL: (URL) -> Void
-    
-    @State private var measuredWidth: CGFloat = 0
-    @State private var oversizedIds: Set<UUID> = []
-    private let minItemWidth: CGFloat = 320
-    
-    private func layout(for width: CGFloat) -> (rowSpacing: CGFloat, columnSpacing: CGFloat, columns: [GridItem], id: Int) {
-        let columnSpacing: CGFloat = width < 700 ? 32 : 40
-        let rowSpacing: CGFloat = width < 700 ? 12 : 16
-        let rawCount = Int((width + columnSpacing) / (minItemWidth + columnSpacing))
-        // Permettre jusqu'à 6 colonnes pour les très grandes fenêtres
-        let columnCount = max(1, min(6, rawCount))
-        let columns = Array(repeating: GridItem(.flexible(), spacing: columnSpacing, alignment: .top), count: columnCount)
-        // Utiliser une combinaison de la largeur et du nombre de colonnes pour l'ID
-        let widthBucket = Int((width / 10).rounded()) * 100 + columnCount
-        return (rowSpacing, columnSpacing, columns, widthBucket)
-    }
-    
+
     var body: some View {
-        let computed = layout(for: measuredWidth > 0 ? measuredWidth : 800) // Valeur par défaut pour macOS
-        let visible = articles.filter { !oversizedIds.contains($0.id) }
-        LazyVGrid(columns: computed.columns, alignment: .leading, spacing: computed.rowSpacing) {
-            ForEach(visible, id: \.id) { article in
-                ArticleGridCard(article: article, isFeedWall: isFeedWall, onOpenURL: { url in
+        LazyVGrid(columns: layout.columns, alignment: .leading, spacing: layout.rowSpacing) {
+            ForEach(articles, id: \.id) { article in
+                ArticleGridCard(article: article, isFeedWall: isFeedWall, isLiveResizing: isLiveResizing, onOpenURL: { url in
                     onOpenURL(url)
-                }, onOversized: { id in
-                    oversizedIds.insert(id)
-                })
+                }, onOversized: nil)
                 .frame(maxWidth: .infinity)
             }
         }
-        .frame(maxWidth: .infinity)
-        .background(
-            GeometryReader { proxy in
-                Color.clear
-                    .onAppear { measuredWidth = proxy.size.width }
-                    .onChange(of: proxy.size.width) { _, newWidth in
-                        // Calculer les buckets avec la nouvelle logique
-                        let oldLayout = layout(for: measuredWidth)
-                        let newLayout = layout(for: newWidth)
-                        if oldLayout.id != newLayout.id {
-                            measuredWidth = newWidth
-                        }
-                    }
-            }
-        )
-        .id(computed.id)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -1487,7 +1951,11 @@ struct ArticleImage: View {
 
     private var contentView: AnyView {
         if isYouTube(pageURL) {
-            return AnyView(YouTubeThumbnailView(videoPageURL: pageURL).clipped())
+            return AnyView(
+                YouTubeThumbnailView(videoPageURL: pageURL)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+            )
         } else if let image = loader.image {
             #if os(macOS)
             return AnyView(Image(nsImage: image).resizable().scaledToFill().clipped())
@@ -1509,131 +1977,6 @@ struct ArticleImage: View {
                 ).skeletonPulse()
             )
         }
-    }
-}
-
-private struct ProgressiveBlurImage: View {
-    let url: URL?
-    let pageURL: URL?
-    let referer: URL?
-    let showOverlay: Bool
-    let onSizeKnown: ((CGSize) -> Void)?
-
-    @StateObject private var loader = SimpleImageLoader()
-
-    private struct BlurLayer: Identifiable {
-        let id: Int
-        let radius: CGFloat
-        let startOpacity: Double
-        let endOpacity: Double
-        let heightFraction: CGFloat
-    }
-
-    private let blurLayers: [BlurLayer] = [
-        BlurLayer(id: 0, radius: 6, startOpacity: 0.08, endOpacity: 0.22, heightFraction: 0.46),
-        BlurLayer(id: 1, radius: 10, startOpacity: 0.12, endOpacity: 0.32, heightFraction: 0.40),
-        BlurLayer(id: 2, radius: 14, startOpacity: 0.16, endOpacity: 0.42, heightFraction: 0.34),
-        BlurLayer(id: 3, radius: 18, startOpacity: 0.20, endOpacity: 0.52, heightFraction: 0.28)
-    ]
-
-    var body: some View {
-        ZStack {
-            baseContent
-            if showOverlay, let image = loader.image {
-                progressiveOverlay(for: image)
-                    .allowsHitTesting(false)
-            }
-        }
-        .onAppear {
-            loader.load(url: url, pageURL: pageURL, referer: referer)
-        }
-        .onChange(of: url) { _, _ in
-            loader.resetAndLoad(url: url, pageURL: pageURL, referer: referer)
-        }
-        .onChange(of: pageURL) { _, _ in
-            loader.resetAndLoad(url: url, pageURL: pageURL, referer: referer)
-        }
-        .onReceive(loader.$image) { newImage in
-            guard let newImage else { return }
-            #if os(macOS)
-            let size = newImage.size
-            #elseif os(iOS)
-            let size = newImage.size
-            #endif
-            onSizeKnown?(size)
-        }
-    }
-
-    @ViewBuilder
-    private var baseContent: some View {
-        if let image = loader.image {
-            platformImageView(image)
-                .resizable()
-                .scaledToFill()
-        } else if loader.isLoading {
-            ProgressView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.gray.opacity(0.1))
-        } else {
-            LinearGradient(
-                colors: [Color.gray.opacity(0.12), Color.gray.opacity(0.22)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .skeletonPulse()
-        }
-    }
-
-    private func progressiveOverlay(for image: PlatformImage) -> some View {
-        GeometryReader { geo in
-            ZStack {
-                ForEach(blurLayers) { layer in
-                    platformImageView(image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .clipped()
-                        .blur(radius: layer.radius)
-                        .mask(
-                            VStack(spacing: 0) {
-                                Spacer()
-                                LinearGradient(
-                                    colors: [
-                                        .clear,
-                                        .black.opacity(layer.startOpacity),
-                                        .black.opacity(layer.endOpacity)
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                                .frame(height: geo.size.height * layer.heightFraction)
-                            }
-                        )
-                }
-
-                VStack(spacing: 0) {
-                    Spacer()
-                    LinearGradient(
-                        colors: [
-                            .clear,
-                            .black.opacity(0.18),
-                            .black.opacity(0.32)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: geo.size.height * 0.4)
-                }
-            }
-        }
-    }
-
-    private func platformImageView(_ image: PlatformImage) -> Image {
-        #if os(macOS)
-        return Image(nsImage: image)
-        #elseif os(iOS)
-        return Image(uiImage: image)
-        #endif
     }
 }
 
@@ -1737,6 +2080,20 @@ private func isYouTube(_ url: URL?) -> Bool {
     return host.contains("youtube.com") || host.contains("youtu.be")
 }
 
+private func isAppleMusic(_ url: URL?) -> Bool {
+    guard let u = url, let host = u.host?.lowercased() else { return false }
+    return host == "music.apple.com" || host == "itunes.apple.com"
+}
+
+private func isTwitterURL(_ url: URL?) -> Bool {
+    guard let u = url, let rawHost = u.host?.lowercased() else { return false }
+    let host = rawHost.hasPrefix("www.") ? String(rawHost.dropFirst(4)) : rawHost
+    return host == "x.com"
+        || host.hasSuffix(".x.com")
+        || host == "twitter.com"
+        || host.hasSuffix(".twitter.com")
+}
+
 private struct ReadLaterButton: View {
     let article: Article
     @Environment(FeedService.self) private var feedService
@@ -1765,6 +2122,113 @@ private struct ReadLaterButton: View {
     }
 }
 
+struct MusicEqualizerBars: View {
+    var color: Color = .gray
+    @State private var heights: [CGFloat] = [0.4, 0.7, 0.5]
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 3) {
+            ForEach(0..<3, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(color)
+                    .frame(width: 3, height: 6 + heights[index] * 14)
+            }
+        }
+        .frame(height: 20)
+        .onAppear { animate() }
+    }
+
+    private func animate() {
+        withAnimation(.easeInOut(duration: 0.45).repeatForever(autoreverses: true)) {
+            heights[0] = CGFloat.random(in: 0.2...1.0)
+        }
+        withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true).delay(0.1)) {
+            heights[1] = CGFloat.random(in: 0.2...1.0)
+        }
+        withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true).delay(0.2)) {
+            heights[2] = CGFloat.random(in: 0.2...1.0)
+        }
+    }
+}
+
+private struct AppleMusicPlayButton: View {
+    let article: Article
+    private var musicService: MusicKitService { MusicKitService.shared }
+    @Environment(FeedService.self) private var feedService
+
+    private var articleURL: URL { article.url }
+    private var artworkURL: URL? { article.imageURL }
+    private var containerURL: URL? {
+        feedService.feeds.first(where: { $0.id == article.feedId })?.feedURL
+    }
+    private var playlistTracks: [(url: URL, artworkURL: URL?)] {
+        guard feedService.isAppleMusicFeed(feedId: article.feedId) else { return [] }
+        return orderedAppleMusicTracks(for: article.feedId, from: feedService.articles)
+    }
+
+    private var isCurrentTrack: Bool {
+        musicService.currentArticleURL == articleURL
+    }
+
+    private var isPlayingThis: Bool {
+        isCurrentTrack && musicService.isPlaying
+    }
+
+    private var isLoadingThis: Bool {
+        isCurrentTrack && musicService.isLoading
+    }
+
+    var body: some View {
+        Button(action: {
+            Task { @MainActor in
+                if playlistTracks.count > 1 {
+                    await MusicKitService.shared.playFromCollection(
+                        itemURL: articleURL,
+                        artworkURL: artworkURL,
+                        containerURL: containerURL,
+                        tracks: playlistTracks
+                    )
+                } else {
+                    await MusicKitService.shared.play(from: articleURL, artworkURL: artworkURL)
+                }
+            }
+        }) {
+            ZStack {
+                Circle()
+                    .fill(.ultraThinMaterial)
+                    .frame(width: 54, height: 54)
+                Circle()
+                    .stroke(Color.white.opacity(0.30), lineWidth: 1)
+                    .frame(width: 54, height: 54)
+
+                if isLoadingThis {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                } else {
+                    Image(systemName: isPlayingThis ? "pause.fill" : "play.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .offset(x: isPlayingThis ? 0 : 2)
+                }
+            }
+            .shadow(color: .black.opacity(0.35), radius: 10, x: 0, y: 4)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private func orderedAppleMusicTracks(for feedId: UUID, from articles: [Article]) -> [(url: URL, artworkURL: URL?)] {
+    var seenURLs = Set<String>()
+    return articles
+        .filter { $0.feedId == feedId }
+        .filter { article in
+            seenURLs.insert(article.url.absoluteString).inserted
+        }
+        .map { article in
+            (url: article.url, artworkURL: article.imageURL)
+        }
+}
 
 private func extractYouTubeVideoId(from url: URL) -> String? {
     guard let host = url.host?.lowercased() else { return nil }
@@ -1955,20 +2419,8 @@ private struct YouTubeWebPlayer: NSViewRepresentable {
 }
 #endif
 
-private extension String {
+extension String {
     var decodedHTMLEntities: String {
-        if let data = self.data(using: .utf8),
-           let attributed = try? NSAttributedString(
-                data: data,
-                options: [
-                    .documentType: NSAttributedString.DocumentType.html,
-                    .characterEncoding: String.Encoding.utf8.rawValue
-                ],
-                documentAttributes: nil
-           ) {
-            let s = attributed.string
-            return s.isEmpty ? self : s
-        }
         var text = self
         text = text
             .replacingOccurrences(of: "&amp;", with: "&")
@@ -2005,3 +2457,430 @@ private extension String {
         return text
     }
 }
+
+// MARK: - iPad Article Summary Sheet
+
+#if os(iOS)
+struct ArticleSummarySheet: View {
+    let article: Article
+    let feedService: FeedService
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var summaryText: String = ""
+    @State private var takeaways: [String] = []
+    @State private var isLoading = true
+    @State private var errorMessage: String?
+
+    private var sourceFeed: Feed? {
+        feedService.feeds.first(where: { $0.id == article.feedId })
+    }
+
+    private var langConfig: (targetName: String, takeawaysHeading: String, summaryLabel: String) {
+        let lang = LocalizationManager.shared.currentLanguage
+        switch lang {
+        case .french: return ("français", "À retenir", "Résumé")
+        case .english: return ("English", "Key takeaways", "Summary")
+        case .spanish: return ("español", "Puntos clave", "Resumen")
+        case .german: return ("Deutsch", "Wichtigste Punkte", "Zusammenfassung")
+        case .italian: return ("italiano", "Da ricordare", "Riassunto")
+        case .portuguese: return ("português", "Pontos‑chave", "Resumo")
+        case .japanese: return ("日本語", "要点", "概要")
+        case .chinese: return ("中文", "要点", "摘要")
+        case .korean: return ("한국어", "핵심 요약", "요약")
+        case .russian: return ("русский", "Ключевые тезисы", "Резюме")
+        @unknown default: return ("English", "Key takeaways", "Summary")
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    // Hero image
+                    headerImage
+                    // Content
+                    VStack(alignment: .leading, spacing: 24) {
+                        articleMeta
+                        if isLoading {
+                            loadingSection
+                        } else if let error = errorMessage {
+                            errorSection(error)
+                        } else {
+                            summarySection
+                            if !takeaways.isEmpty {
+                                takeawaysSection
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 24)
+                    .padding(.bottom, 40)
+                }
+            }
+            .background(Color(.systemGroupedBackground))
+            .ignoresSafeArea(.container, edges: .top)
+            .toolbarVisibility(.visible, for: .navigationBar)
+            .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .fontWeight(.semibold)
+                    }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    HStack(spacing: 16) {
+                        Button {
+                            Task { await feedService.toggleFavorite(for: article) }
+                        } label: {
+                            Image(systemName: article.isSaved ? "bookmark.fill" : "bookmark")
+                        }
+                        Button {
+                            UIApplication.shared.open(article.url)
+                        } label: {
+                            Image(systemName: "safari")
+                        }
+                        ShareLink(item: article.url) {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                    }
+                }
+            }
+        }
+        .presentationDragIndicator(.visible)
+        .task { await generateSummary() }
+    }
+
+    // MARK: - Subviews
+
+    private var headerImage: some View {
+        Group {
+            if let imageURL = article.imageURL {
+                AsyncImage(url: imageURL) { phase in
+                    switch phase {
+                    case .success(let img):
+                        img.resizable()
+                            .aspectRatio(16/9, contentMode: .fill)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 420)
+                            .clipped()
+                    case .failure:
+                        headerPlaceholder
+                    case .empty:
+                        headerPlaceholder
+                            .overlay { ProgressView() }
+                    @unknown default:
+                        headerPlaceholder
+                    }
+                }
+            } else {
+                headerPlaceholder
+            }
+        }
+    }
+
+    private var headerPlaceholder: some View {
+        LinearGradient(
+            colors: [Color.gray.opacity(0.15), Color.gray.opacity(0.25)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .frame(maxWidth: .infinity)
+        .frame(height: 420)
+    }
+
+    private var articleMeta: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Source + date
+            HStack(spacing: 8) {
+                if let feed = sourceFeed, let icon = faviconURL(for: feed) {
+                    AsyncImage(url: icon) { image in
+                        image.resizable().scaledToFit()
+                    } placeholder: {
+                        Color.gray.opacity(0.2)
+                    }
+                    .frame(width: 20, height: 20)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                }
+                if let feed = sourceFeed {
+                    Text(feed.title)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.secondary)
+                }
+                if let date = article.publishedAt {
+                    Text("·")
+                        .foregroundStyle(.tertiary)
+                    Text(date, style: .relative)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            // Title
+            Text(article.title.decodedHTMLEntities)
+                .font(.title)
+                .fontWeight(.bold)
+                .lineLimit(4)
+                .fixedSize(horizontal: false, vertical: true)
+            // Author
+            if let author = article.author, !author.isEmpty {
+                Text(author)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var loadingSection: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            // Skeleton résumé
+            VStack(alignment: .leading, spacing: 12) {
+                // Label skeleton
+                HStack(spacing: 8) {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Color.gray.opacity(0.15))
+                        .frame(width: 20, height: 20)
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Color.gray.opacity(0.15))
+                        .frame(width: 80, height: 18)
+                }
+                // Text lines
+                ForEach(0..<5, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(Color.gray.opacity(0.12))
+                        .frame(height: 16)
+                        .frame(maxWidth: i == 4 ? .infinity : .infinity, alignment: .leading)
+                        .padding(.trailing, i == 4 ? 80 : (i == 2 ? 40 : 0))
+                }
+            }
+
+            // Skeleton à retenir
+            VStack(alignment: .leading, spacing: 12) {
+                // Label skeleton
+                HStack(spacing: 8) {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Color.gray.opacity(0.15))
+                        .frame(width: 20, height: 20)
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Color.gray.opacity(0.15))
+                        .frame(width: 100, height: 18)
+                }
+                // Bullet point lines
+                ForEach(0..<3, id: \.self) { i in
+                    HStack(alignment: .top, spacing: 10) {
+                        Circle()
+                            .fill(Color.gray.opacity(0.15))
+                            .frame(width: 7, height: 7)
+                            .offset(y: 5)
+                        VStack(alignment: .leading, spacing: 6) {
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(Color.gray.opacity(0.12))
+                                .frame(height: 16)
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(Color.gray.opacity(0.12))
+                                .frame(height: 16)
+                                .padding(.trailing, i == 0 ? 60 : (i == 1 ? 100 : 30))
+                        }
+                    }
+                }
+            }
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color(.secondarySystemGroupedBackground))
+            )
+        }
+        .modifier(ShimmerModifier())
+    }
+
+    private func errorSection(_ error: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+            Text(error)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button {
+                Task { await generateSummary() }
+            } label: {
+                Label("Retry", systemImage: "arrow.clockwise")
+                    .font(.subheadline.weight(.medium))
+            }
+            .buttonStyle(.bordered)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+    }
+
+    private var summarySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(langConfig.summaryLabel, systemImage: "text.alignleft")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.primary)
+            Text(summaryText)
+                .font(.title3)
+                .lineSpacing(8)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var takeawaysSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(langConfig.takeawaysHeading, systemImage: "lightbulb")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(Array(takeaways.enumerated()), id: \.offset) { _, point in
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 7, height: 7)
+                            .offset(y: 2)
+                        Text(point)
+                            .font(.title3)
+                            .lineSpacing(6)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+    }
+
+    // MARK: - AI Summary Generation
+
+    private func generateSummary() async {
+        isLoading = true
+        errorMessage = nil
+
+        let rawSource = article.contentText ?? article.summary ?? ""
+        let sourceText = cleanSourceText(rawSource)
+        let title = article.title.decodedHTMLEntities
+
+        guard !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            await MainActor.run {
+                errorMessage = "No content available to summarize."
+                isLoading = false
+            }
+            return
+        }
+
+        let config = langConfig
+        let delimiter = "\n===TAKEAWAYS===\n"
+        let system = """
+        You are an editor that produces EXACTLY two sections every time. \
+        You MUST always output both a summary AND key takeaways separated by the delimiter ===TAKEAWAYS===. \
+        Never skip the takeaways section. \
+        Translate to \(config.targetName) if needed. Output strictly in \(config.targetName) (except proper nouns). \
+        Output plain text only (no HTML, no CDATA, no XML, no Markdown, no bold, no headers, no brackets like [Résumé]). No links, no disclaimers.
+        """
+        let user = """
+        Title: \(title)
+
+        Text:
+        \(sourceText.prefix(12000))
+
+        You MUST output EXACTLY this format — both sections are MANDATORY:
+
+        [2-3 paragraphs summarizing the article in plain text]
+
+        ===TAKEAWAYS===
+
+        - [takeaway 1]
+        - [takeaway 2]
+        - [takeaway 3]
+        - [takeaway 4]
+        - [takeaway 5]
+        - [takeaway 6]
+
+        RULES:
+        1. The summary (before ===TAKEAWAYS===) is 2-3 short paragraphs. Plain text, no bullets.
+        2. After ===TAKEAWAYS=== write EXACTLY 5 to 8 bullet points starting with "- ". One per line.
+        3. BOTH sections are REQUIRED. Never omit the takeaways.
+        4. The delimiter ===TAKEAWAYS=== must appear exactly once, on its own line.
+        5. Respond strictly in \(config.targetName).
+        """
+
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            let model = SystemLanguageModel.default
+            switch model.availability {
+            case .available:
+                do {
+                    let session = LanguageModelSession(
+                        model: model,
+                        instructions: { system }
+                    )
+                    let response = try await session.respond(to: user)
+                    let content = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let parts = content.components(separatedBy: delimiter)
+                    var summary = parts.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    var takeawaysRaw = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+
+                    // Fallback: if no delimiter found, try to split on first "- " bullet line
+                    if takeawaysRaw.isEmpty {
+                        let lines = summary.components(separatedBy: .newlines)
+                        if let firstBulletIdx = lines.firstIndex(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("- ") || $0.trimmingCharacters(in: .whitespaces).hasPrefix("• ") }) {
+                            summary = lines[..<firstBulletIdx].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                            takeawaysRaw = lines[firstBulletIdx...].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                        }
+                    }
+
+                    let points = takeawaysRaw
+                        .components(separatedBy: .newlines)
+                        .map { $0.trimmingCharacters(in: .whitespaces) }
+                        .map { $0.hasPrefix("- ") ? String($0.dropFirst(2)) : $0 }
+                        .map { $0.hasPrefix("• ") ? String($0.dropFirst(2)) : $0 }
+                        .filter { !$0.isEmpty }
+
+                    await MainActor.run {
+                        summaryText = cleanDisplaySummary(summary)
+                        takeaways = points.map { cleanDisplaySummary($0) }
+                        isLoading = false
+                    }
+                    return
+                } catch {
+                    await MainActor.run {
+                        errorMessage = error.localizedDescription
+                        isLoading = false
+                    }
+                    return
+                }
+            default:
+                break
+            }
+        }
+        #endif
+
+        // Fallback: show existing summary if AI unavailable
+        await MainActor.run {
+            if let existing = article.summary {
+                summaryText = cleanDisplaySummary(existing.decodedHTMLEntities)
+            } else {
+                errorMessage = "Apple Intelligence is not available on this device."
+            }
+            isLoading = false
+        }
+    }
+}
+
+struct ShimmerModifier: ViewModifier {
+    @State private var phase: CGFloat = 0
+    func body(content: Content) -> some View {
+        content
+            .opacity(0.4 + 0.6 * (0.5 + 0.5 * Foundation.sin(phase)))
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                    phase = .pi
+                }
+            }
+    }
+}
+#endif

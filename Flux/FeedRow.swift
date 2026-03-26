@@ -29,11 +29,28 @@ struct FeedRow: View {
     @State private var newTitle = ""
     @FocusState private var titleFieldFocused: Bool
     private let lm = LocalizationManager.shared
-    
+
+    private var isMusicFeed: Bool {
+        feedService.isMusicFeedURL(feed.feedURL) || feedService.isMusicFeedURL(feed.siteURL ?? feed.feedURL)
+    }
+
+    private var isPlayingFromThisFeed: Bool {
+        guard MusicKitService.shared.isPlaying,
+              let currentURL = MusicKitService.shared.currentArticleURL else { return false }
+        return feedService.articles.contains { $0.feedId == feed.id && $0.url == currentURL }
+    }
+
+    @State private var cachedUnreadCount: Int = 0
+
     private var unreadCount: Int {
-        feedService.articles.reduce(0) { partial, a in
+        _ = feedService.badgeUpdateTrigger
+        guard !isMusicFeed else { return 0 }
+        // Pendant le refresh global, garder le compteur gelé pour éviter les pics
+        guard !feedService.isRefreshing else { return cachedUnreadCount }
+        let count = feedService.articles.reduce(0) { partial, a in
             partial + ((a.feedId == feed.id && a.isRead == false) ? 1 : 0)
         }
+        return count
     }
     
     var body: some View {
@@ -80,13 +97,14 @@ struct FeedRow: View {
             if feedService.isRefreshing, feedService.refreshingFeedId == feed.id {
                 ProgressView()
                     .controlSize(.small)
+            } else if isMusicFeed && isPlayingFromThisFeed {
+                MusicEqualizerBars()
+                    .scaleEffect(0.7)
+                    .frame(width: 16, height: 14)
             } else if unreadCount > 0 {
-                Text("\(unreadCount)")
-                    .font(.caption2).bold()
-                    .padding(.vertical, 2)
-                    .padding(.horizontal, 6)
-                    .background(Capsule().fill(Color.black.opacity(0.10)))
-                    .opacity(sidebarItemTextOpacity)
+                Circle()
+                    .fill(.blue)
+                    .frame(width: 7, height: 7)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -94,6 +112,23 @@ struct FeedRow: View {
         .onTapGesture {
             if !isRenaming {
                 selectedFeedId = feed.id
+            }
+        }
+        .onChange(of: feedService.isRefreshing) { _, refreshing in
+            if !refreshing {
+                // Mettre à jour le cache quand le refresh se termine
+                if !isMusicFeed {
+                    cachedUnreadCount = feedService.articles.reduce(0) { partial, a in
+                        partial + ((a.feedId == feed.id && a.isRead == false) ? 1 : 0)
+                    }
+                }
+            }
+        }
+        .onAppear {
+            if !isMusicFeed {
+                cachedUnreadCount = feedService.articles.reduce(0) { partial, a in
+                    partial + ((a.feedId == feed.id && a.isRead == false) ? 1 : 0)
+                }
             }
         }
         .contextMenu {

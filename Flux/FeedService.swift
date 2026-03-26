@@ -13,11 +13,20 @@ extension Notification.Name {
 #if canImport(AppKit)
 import AppKit
 #endif
+#if canImport(ImageIO)
+import ImageIO
+#endif
+#if canImport(UniformTypeIdentifiers)
+import UniformTypeIdentifiers
+#endif
 #if canImport(UserNotifications)
 @preconcurrency import UserNotifications
 #endif
 #if canImport(AVFoundation)
 @preconcurrency import AVFoundation
+#endif
+#if canImport(WidgetKit)
+import WidgetKit
 #endif
 #if canImport(WebKit)
 import WebKit
@@ -41,8 +50,58 @@ import SwiftSoup
 @Observable
 @MainActor
 final class FeedService {
+    private enum WidgetSnapshotStore {
+        static let appGroupId = "group.com.adriendonot.fluxapp"
+        static let dataDirectory = "Library/Application Support/widget-data"
+        static let feedsFileName = "feeds.json"
+        static let latestByFeedFileName = "latestByFeed.json"
+        static let feedDigestByFeedFileName = "feedDigestByFeed.json"
+        static let wallArticlesFileName = "wallArticles.json"
+        static let widgetKind = "DernierArticleWidgetSourceV2"
+        static let feedDigestWidgetKind = "FeedDigestWidgetSourceV1"
+        static let wallWidgetKind = "FluxWallWidgetV1"
+        static let savedArticlesFileName = "savedArticles.json"
+        static let readLaterWidgetKind = "ReadLaterWidgetV2"
+        static let widgetKinds = [widgetKind, feedDigestWidgetKind, wallWidgetKind, readLaterWidgetKind]
+        static let imageDirectory = "Library/Application Support/widget-data/images"
+    }
+
+    private struct WidgetFeedMeta: Codable {
+        let id: UUID
+        let title: String
+    }
+
+    private struct WidgetArticleSnapshot: Codable {
+        let id: UUID
+        let title: String
+        let url: URL
+        let imageURL: URL?
+        let imageFileName: String?
+        let feedTitle: String
+        let publishedAt: Date?
+        let isSaved: Bool
+    }
+
+    private struct WidgetFeedDigestSnapshot: Codable {
+        let feedTitle: String
+        let articles: [WidgetArticleSnapshot]
+    }
+
+    private struct WidgetImageJob: Sendable {
+        let imageURL: URL
+        let refererURL: URL
+        let fileName: String
+    }
+
     private let modelContext: ModelContext
     private let logger = Logger(subsystem: "Flux", category: "FeedService")
+#if canImport(WidgetKit)
+    private var pendingWidgetReloadTask: Task<Void, Never>?
+    private var lastWidgetReloadAt: Date?
+#endif
+
+    /// Cookie to bypass YouTube's GDPR consent screen (SOCS replaces the old CONSENT=YES+1)
+    private static let youTubeConsentCookie = "SOCS=CAISEwgDEgk2MjcyOTU2NTQaAmVuIAEaBgiA_LiYBg"
     
     // Liste observable des flux
     var feeds: [Feed] = []
@@ -50,14 +109,23 @@ final class FeedService {
     var folders: [Folder] = []
     // Liste observable des articles (tous flux confondus)
     var articles: [Article] = []
+    // Liste observable des notes prises dans le lecteur
+    var readerNotes: [ReaderNote] = []
     // Compteur de mise à jour pour forcer le re-render des badges (incrémenté à chaque changement de isRead)
     var badgeUpdateTrigger: Int = 0
     // Etat de chargement
     var isRefreshing: Bool = false
+    private var suppressBadgeUpdates: Bool = false
     // Flux en cours de rafraîchissement (nil = tous)
     var refreshingFeedId: UUID? = nil
+    // Permet d'interrompre un refresh global en cours quand un ajout de flux est prioritaire
+    private var cancelGlobalRefresh: Bool = false
+    // Verrou séparé pour le refresh ciblé (ajout de flux) — ne bloque pas / n'est pas bloqué par le global
+    private var isSingleFeedRefreshing: Bool = false
     // Dernière actualisation (mur de flux)
     var lastRefreshAt: Date? = nil
+    // Signal pour forcer la vue Découverte à se recalculer après ajout réel de nouveaux articles
+    var discoveryRefreshTrigger: Int = 0
     // AI état
     var isGeneratingSummary: Bool = false
     // Newsletter (génération éditoriale)
@@ -96,6 +164,7 @@ final class FeedService {
     var showNewsletterScheduleSheet: Bool = false
     private var newsletterScheduleTimes: [DateComponents] = []
     private var newsletterTimers: [Timer] = []
+    private var newsletterLastFiredSlots: Set<String> = []
     // Config AI décodée depuis Settings.aiProviderConfig
     private struct AIProviderConfig: Codable {
         let aiEnabled: Bool?
@@ -107,16 +176,13 @@ final class FeedService {
         loadFeeds()
         loadFolders()
         loadArticles()
+        loadReaderNotes()
         logger.info("FeedService init — feeds: \(self.feeds.count), articles: \(self.articles.count)")
-        // Ajouter les flux par défaut si première utilisation
         setupDefaultFeedsIfNeeded()
-        // Démarrer l'auto-refresh toutes les 15 minutes
         scheduleAutoRefresh()
-        // Découverte asynchrone des favicons manquants
         Task { [weak self] in
             await self?.ensureFavicons()
         }
-        // Charger planning newsletter par défaut et programmer
         loadNewsletterSchedule()
         scheduleNewsletterTimers()
     }
@@ -315,6 +381,7 @@ final class FeedService {
             }
         }
         logger.info("Loaded feeds: \(self.feeds.count)")
+        syncWidgetSnapshots()
     }
 
     func reorderFeeds(fromOffsets: IndexSet, toOffset: Int) {
@@ -426,7 +493,384 @@ final class FeedService {
         let desc = FetchDescriptor<Article>(sortBy: [SortDescriptor(\.publishedAt, order: .reverse)])
         articles = (try? modelContext.fetch(desc)) ?? []
         logger.info("Loaded articles: \(self.articles.count)")
-        updateAppBadge()
+        if !suppressBadgeUpdates {
+            updateAppBadge()
+            syncWidgetSnapshots()
+        }
+    }
+
+    private func loadReaderNotes() {
+        let desc = FetchDescriptor<ReaderNote>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+        readerNotes = (try? modelContext.fetch(desc)) ?? []
+        logger.info("Loaded reader notes: \(self.readerNotes.count)")
+    }
+
+    private func syncWidgetSnapshots() {
+        guard let dataDirectoryURL = Self.widgetDataDirectoryURL() else { return }
+
+        let feedMeta = feeds.map { WidgetFeedMeta(id: $0.id, title: $0.title) }
+        if let feedData = try? JSONEncoder().encode(feedMeta) {
+            let feedsFileURL = dataDirectoryURL.appendingPathComponent(WidgetSnapshotStore.feedsFileName, isDirectory: false)
+            try? feedData.write(to: feedsFileURL, options: .atomic)
+        }
+
+        let imageDirectoryURL = Self.widgetImagesDirectoryURL()
+        var imageJobs: [WidgetImageJob] = []
+        var latestByFeed: [String: WidgetArticleSnapshot] = [:]
+        var digestByFeed: [String: WidgetFeedDigestSnapshot] = [:]
+        for feed in feeds {
+            let feedArticles = articles
+                .filter({ $0.feedId == feed.id })
+                .sorted(by: { ($0.publishedAt ?? .distantPast) > ($1.publishedAt ?? .distantPast) })
+            guard feedArticles.isEmpty == false else { continue }
+
+            let articleSnapshots: [WidgetArticleSnapshot] = Array(feedArticles.prefix(4)).map { article in
+                let imageFileName = article.imageURL.map { _ in "\(article.id.uuidString).jpg" }
+                if
+                    let imageURL = article.imageURL,
+                    let imageFileName,
+                    let imageDirectoryURL
+                {
+                    let fileURL = imageDirectoryURL.appendingPathComponent(imageFileName, isDirectory: false)
+                    if FileManager.default.fileExists(atPath: fileURL.path) == false {
+                        imageJobs.append(
+                            WidgetImageJob(
+                                imageURL: imageURL,
+                                refererURL: article.url,
+                                fileName: imageFileName
+                            )
+                        )
+                    }
+                }
+
+                return WidgetArticleSnapshot(
+                    id: article.id,
+                    title: article.title,
+                    url: article.url,
+                    imageURL: article.imageURL,
+                    imageFileName: imageFileName,
+                    feedTitle: feed.title,
+                    publishedAt: article.publishedAt,
+                    isSaved: article.isSaved
+                )
+            }
+
+            if let firstSnapshot = articleSnapshots.first {
+                latestByFeed[feed.id.uuidString] = firstSnapshot
+            }
+
+            digestByFeed[feed.id.uuidString] = WidgetFeedDigestSnapshot(
+                feedTitle: feed.title,
+                articles: articleSnapshots
+            )
+        }
+
+        if let latestData = try? JSONEncoder().encode(latestByFeed) {
+            let latestFileURL = dataDirectoryURL.appendingPathComponent(
+                WidgetSnapshotStore.latestByFeedFileName,
+                isDirectory: false
+            )
+            try? latestData.write(to: latestFileURL, options: .atomic)
+        }
+
+        if let digestData = try? JSONEncoder().encode(digestByFeed) {
+            let digestFileURL = dataDirectoryURL.appendingPathComponent(
+                WidgetSnapshotStore.feedDigestByFeedFileName,
+                isDirectory: false
+            )
+            try? digestData.write(to: digestFileURL, options: .atomic)
+        }
+
+        let musicFeedIDs = Set(
+            feeds
+                .filter { isMusicFeedURL($0.feedURL) || isMusicFeedURL($0.siteURL ?? $0.feedURL) }
+                .map(\.id)
+        )
+        var seenWallURLs = Set<String>()
+        let wallArticles: [WidgetArticleSnapshot] = articles
+            .filter { !musicFeedIDs.contains($0.feedId) }
+            .filter { article in
+                let value = article.url.absoluteString.lowercased()
+                return !(value.contains("youtube") && value.contains("/shorts/"))
+            }
+            .sorted { ($0.publishedAt ?? .distantPast) > ($1.publishedAt ?? .distantPast) }
+            .filter { article in
+                seenWallURLs.insert(article.url.absoluteString).inserted
+            }
+            .prefix(10)
+            .map { article in
+                let feedTitle = feeds.first(where: { $0.id == article.feedId })?.title ?? ""
+                let imageFileName = article.imageURL.map { _ in "\(article.id.uuidString).jpg" }
+                if let imageURL = article.imageURL, let imageFileName, let imageDirectoryURL {
+                    let fileURL = imageDirectoryURL.appendingPathComponent(imageFileName, isDirectory: false)
+                    if !FileManager.default.fileExists(atPath: fileURL.path) {
+                        imageJobs.append(WidgetImageJob(imageURL: imageURL, refererURL: article.url, fileName: imageFileName))
+                    }
+                }
+                return WidgetArticleSnapshot(
+                    id: article.id,
+                    title: article.title,
+                    url: article.url,
+                    imageURL: article.imageURL,
+                    imageFileName: imageFileName,
+                    feedTitle: feedTitle,
+                    publishedAt: article.publishedAt,
+                    isSaved: article.isSaved
+                )
+            }
+        if let wallData = try? JSONEncoder().encode(wallArticles) {
+            let wallFileURL = dataDirectoryURL.appendingPathComponent(
+                WidgetSnapshotStore.wallArticlesFileName,
+                isDirectory: false
+            )
+            try? wallData.write(to: wallFileURL, options: .atomic)
+        }
+
+        // Saved articles (read later)
+        let savedArticles: [WidgetArticleSnapshot] = articles
+            .filter { $0.isSaved }
+            .sorted { ($0.publishedAt ?? .distantPast) > ($1.publishedAt ?? .distantPast) }
+            .prefix(10)
+            .map { article in
+                let feedTitle = feeds.first(where: { $0.id == article.feedId })?.title ?? ""
+                let imageFileName = article.imageURL.map { _ in "\(article.id.uuidString).jpg" }
+                if let imageURL = article.imageURL, let imageFileName, let imageDirectoryURL {
+                    let fileURL = imageDirectoryURL.appendingPathComponent(imageFileName, isDirectory: false)
+                    if !FileManager.default.fileExists(atPath: fileURL.path) {
+                        imageJobs.append(WidgetImageJob(imageURL: imageURL, refererURL: article.url, fileName: imageFileName))
+                    }
+                }
+                return WidgetArticleSnapshot(
+                    id: article.id, title: article.title, url: article.url,
+                    imageURL: article.imageURL, imageFileName: imageFileName,
+                    feedTitle: feedTitle, publishedAt: article.publishedAt, isSaved: true
+                )
+            }
+        if let savedData = try? JSONEncoder().encode(savedArticles) {
+            let savedFileURL = dataDirectoryURL.appendingPathComponent(WidgetSnapshotStore.savedArticlesFileName, isDirectory: false)
+            try? savedData.write(to: savedFileURL, options: .atomic)
+        }
+
+        // Collect all image file names that are still referenced by widget snapshots
+        var referencedFileNames = Set<String>()
+        for snapshot in latestByFeed.values {
+            if let name = snapshot.imageFileName { referencedFileNames.insert(name) }
+        }
+        for digest in digestByFeed.values {
+            for article in digest.articles {
+                if let name = article.imageFileName { referencedFileNames.insert(name) }
+            }
+        }
+        for snapshot in wallArticles {
+            if let name = snapshot.imageFileName { referencedFileNames.insert(name) }
+        }
+        for snapshot in savedArticles {
+            if let name = snapshot.imageFileName { referencedFileNames.insert(name) }
+        }
+
+        // Purge orphaned widget images that are no longer used
+        if let imageDirectoryURL {
+            Self.purgeOrphanedWidgetImages(in: imageDirectoryURL, keeping: referencedFileNames)
+        }
+
+        appLog("[FeedService] Widget snapshots prepared: feeds=\(latestByFeed.count), digests=\(digestByFeed.count), wall=\(wallArticles.count), imageJobs=\(imageJobs.count)")
+        scheduleWidgetTimelineReload(preferredDelay: 0.35)
+
+        if imageJobs.isEmpty == false {
+            // Download images FIRST, then reload once – avoids the race condition
+            // where the widget wakes up before images are cached and the second
+            // reloadTimelines call gets throttled by the system.
+            scheduleWidgetImagePrefetch(imageJobs)
+        }
+    }
+
+    private func scheduleWidgetImagePrefetch(_ jobs: [WidgetImageJob]) {
+        guard jobs.isEmpty == false else { return }
+        let uniqueJobs = Array(Dictionary(grouping: jobs, by: \.fileName).values.compactMap(\.first))
+        Task(priority: .utility) {
+            await Self.prefetchWidgetImages(uniqueJobs)
+            scheduleWidgetTimelineReload(preferredDelay: 0.8)
+        }
+    }
+
+    private func scheduleWidgetTimelineReload(preferredDelay: TimeInterval) {
+#if canImport(WidgetKit)
+        pendingWidgetReloadTask?.cancel()
+
+        let minInterval: TimeInterval = 20
+        let elapsed = Date().timeIntervalSince(lastWidgetReloadAt ?? .distantPast)
+        let delay = max(preferredDelay, max(0, minInterval - elapsed))
+
+        pendingWidgetReloadTask = Task { [weak self] in
+            if delay > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            }
+            guard let self, !Task.isCancelled else { return }
+            for kind in WidgetSnapshotStore.widgetKinds {
+                WidgetCenter.shared.reloadTimelines(ofKind: kind)
+            }
+            lastWidgetReloadAt = Date()
+            pendingWidgetReloadTask = nil
+        }
+#endif
+    }
+
+    private static func widgetImagesDirectoryURL() -> URL? {
+        guard let containerURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: WidgetSnapshotStore.appGroupId
+        ) else {
+            return nil
+        }
+        let directoryURL = containerURL.appendingPathComponent(
+            WidgetSnapshotStore.imageDirectory,
+            isDirectory: true
+        )
+        try? FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        return directoryURL
+    }
+
+    private static func widgetDataDirectoryURL() -> URL? {
+        guard let containerURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: WidgetSnapshotStore.appGroupId
+        ) else {
+            return nil
+        }
+        let directoryURL = containerURL.appendingPathComponent(
+            WidgetSnapshotStore.dataDirectory,
+            isDirectory: true
+        )
+        try? FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        return directoryURL
+    }
+
+    /// Removes any cached widget image that is no longer referenced by current
+    /// widget snapshots. Called every time snapshots are synced so only the
+    /// images actually needed by today's widgets remain on disk.
+    private static func purgeOrphanedWidgetImages(in directoryURL: URL, keeping referencedFileNames: Set<String>) {
+        let fm = FileManager.default
+        guard let allFiles = try? fm.contentsOfDirectory(atPath: directoryURL.path) else { return }
+
+        var removedCount = 0
+        for fileName in allFiles where !referencedFileNames.contains(fileName) {
+            let fileURL = directoryURL.appendingPathComponent(fileName, isDirectory: false)
+            try? fm.removeItem(at: fileURL)
+            removedCount += 1
+        }
+
+        // Clean up legacy cache directory if it still exists
+        if let containerURL = fm.containerURL(forSecurityApplicationGroupIdentifier: WidgetSnapshotStore.appGroupId) {
+            let legacyDir = containerURL.appendingPathComponent("Library/Caches/widget-images", isDirectory: true)
+            if fm.fileExists(atPath: legacyDir.path) {
+                try? fm.removeItem(at: legacyDir)
+                appLog("[FeedService] Removed legacy widget-images cache directory")
+            }
+        }
+
+        if removedCount > 0 {
+            appLog("[FeedService] Purged \(removedCount) orphaned widget images")
+        }
+    }
+
+    private static let maxConcurrentImageDownloads = 6
+
+    private static func prefetchWidgetImages(_ jobs: [WidgetImageJob]) async {
+        guard let directoryURL = widgetImagesDirectoryURL() else { return }
+        await withTaskGroup(of: Void.self) { group in
+            for (index, job) in jobs.enumerated() {
+                // Limit concurrency: wait for a slot before adding more
+                if index >= maxConcurrentImageDownloads {
+                    await group.next()
+                }
+                group.addTask {
+                    guard !Task.isCancelled else { return }
+                    await prefetchWidgetImage(job, directoryURL: directoryURL)
+                }
+            }
+        }
+    }
+
+    private static func prefetchWidgetImage(_ job: WidgetImageJob, directoryURL: URL) async {
+        guard let imageURL = normalizedWidgetImageURL(job.imageURL) else { return }
+
+        var request = URLRequest(url: imageURL)
+        request.timeoutInterval = 15
+        request.setValue(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            forHTTPHeaderField: "User-Agent"
+        )
+        request.setValue(
+            "image/avif,image/webp,image/jpeg,image/*;q=0.8,*/*;q=0.5",
+            forHTTPHeaderField: "Accept"
+        )
+        request.setValue(job.refererURL.absoluteString, forHTTPHeaderField: "Referer")
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                return
+            }
+            guard data.isEmpty == false else { return }
+            let convertedData = convertWidgetImageToJPEGData(from: data) ?? data
+            let fileURL = directoryURL.appendingPathComponent(job.fileName, isDirectory: false)
+            try convertedData.write(to: fileURL, options: .atomic)
+        } catch {
+            return
+        }
+    }
+
+    private static func normalizedWidgetImageURL(_ url: URL?) -> URL? {
+        guard let url else { return nil }
+        guard url.scheme?.lowercased() == "http" else { return url }
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.scheme = "https"
+        return components?.url
+    }
+
+    private static func convertWidgetImageToJPEGData(from data: Data) -> Data? {
+        #if canImport(ImageIO) && canImport(UniformTypeIdentifiers)
+        if
+            let source = CGImageSourceCreateWithData(data as CFData, nil),
+            let image = CGImageSourceCreateThumbnailAtIndex(
+                source,
+                0,
+                [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 800,
+                    kCGImageSourceCreateThumbnailWithTransform: true
+                ] as CFDictionary
+            )
+        {
+            let mutableData = NSMutableData()
+            if let destination = CGImageDestinationCreateWithData(
+                mutableData,
+                UTType.jpeg.identifier as CFString,
+                1,
+                nil
+            ) {
+                CGImageDestinationAddImage(
+                    destination,
+                    image,
+                    [kCGImageDestinationLossyCompressionQuality: 0.82] as CFDictionary
+                )
+                if CGImageDestinationFinalize(destination) {
+                    return mutableData as Data
+                }
+            }
+        }
+        #endif
+
+        #if canImport(AppKit)
+        if
+            let nsImage = NSImage(data: data),
+            let tiff = nsImage.tiffRepresentation,
+            let bitmap = NSBitmapImageRep(data: tiff),
+            let jpeg = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.82])
+        {
+            return jpeg
+        }
+        #endif
+        return data
     }
 
     // Télécharge des données de flux avec retry et délais plus tolérants (serveurs lents/CDN)
@@ -590,8 +1034,14 @@ final class FeedService {
 
     private func isLikelyFeedURL(_ url: URL) -> Bool {
         let path = url.path.lowercased()
-        if path.hasSuffix(".xml") || path.hasSuffix(".rss") || path.hasSuffix(".json") { return true }
-        let keywords = ["/feed", "/rss", "/atom", "/feeds/"]
+        if isLegacyAppleRSSURL(url) { return true }
+        if path.hasSuffix(".xml") || path.hasSuffix(".rss") || path.hasSuffix(".json") || path.hasSuffix("/xml") {
+            return true
+        }
+        if path.contains("/feed/") || path.contains("/rss/") || path.contains("/atom/") || path.contains("/feeds/") {
+            return true
+        }
+        let keywords = ["/feed", "/rss", "/atom", "/feeds"]
         return keywords.contains { path.hasSuffix($0) }
     }
 
@@ -637,47 +1087,51 @@ final class FeedService {
         return host.contains("youtube.com") || host.contains("youtu.be")
     }
 
+    /// Result of YouTube URL resolution: RSS feed URL + optional channel title scraped from the page
+    private struct YouTubeResolution {
+        let feedURL: URL
+        let channelTitle: String?
+    }
+
     // Convertit une URL de chaîne YouTube (channel/user/@handle/\c) en URL de flux RSS officielle
-    private func resolveYouTubeFeedURL(from url: URL) async -> URL? {
+    private func resolveYouTubeFeedURL(from url: URL) async -> YouTubeResolution? {
         guard isYouTubeHost(url) else { return nil }
         let path = url.path
         appLog("[FeedService] Resolving YouTube URL: \(url.absoluteString)")
-        
+
         // Déjà un flux RSS
-        if path.contains("/feeds/videos.xml") { 
+        if path.contains("/feeds/videos.xml") {
             appLogDebug("[FeedService] Already a RSS feed")
-            return url 
+            return YouTubeResolution(feedURL: url, channelTitle: nil)
         }
-        
+
         // Cas URLs vidéo/shorts/embed/youtu.be → passer par oEmbed pour retrouver la chaîne
         let lowerPath = path.lowercased()
         if lowerPath.contains("/watch") || lowerPath.contains("/shorts") || lowerPath.contains("/embed") || ((url.host ?? "").lowercased().contains("youtu.be")) {
             if let rss = await resolveYouTubeFeedViaOEmbed(from: url) {
                 appLog("[FeedService] Resolved via oEmbed: \(rss.absoluteString)")
-                return rss
+                return YouTubeResolution(feedURL: rss, channelTitle: nil)
             }
         }
-        
+
         // /channel/UCxxxx
         if let range = path.range(of: "/channel/") {
             let id = String(path[range.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            if !id.isEmpty {
-                let rss = URL(string: "https://www.youtube.com/feeds/videos.xml?channel_id=\(id)")
-                appLog("[FeedService] Channel ID found: \(id), RSS URL: \(rss?.absoluteString ?? "nil")")
-                return rss
+            if !id.isEmpty, let rss = URL(string: "https://www.youtube.com/feeds/videos.xml?channel_id=\(id)") {
+                appLog("[FeedService] Channel ID found: \(id), RSS URL: \(rss.absoluteString)")
+                return YouTubeResolution(feedURL: rss, channelTitle: nil)
             }
         }
-        
+
         // /user/username
         if let range = path.range(of: "/user/") {
             let user = String(path[range.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            if !user.isEmpty {
-                let rss = URL(string: "https://www.youtube.com/feeds/videos.xml?user=\(user)")
-                appLog("[FeedService] User found: \(user), RSS URL: \(rss?.absoluteString ?? "nil")")
-                return rss
+            if !user.isEmpty, let rss = URL(string: "https://www.youtube.com/feeds/videos.xml?user=\(user)") {
+                appLog("[FeedService] User found: \(user), RSS URL: \(rss.absoluteString)")
+                return YouTubeResolution(feedURL: rss, channelTitle: nil)
             }
         }
-        
+
         // /@handle ou /c/customName -> récupérer UC id depuis la page
         if path.hasPrefix("/@") || path.hasPrefix("/c/") {
             // Nettoyer le path en retirant /videos, /about, etc.
@@ -687,19 +1141,20 @@ final class FeedService {
                 .replacingOccurrences(of: "/shorts", with: "")
                 .replacingOccurrences(of: "/community", with: "")
                 .replacingOccurrences(of: "/playlists", with: "")
-            
+
             appLog("[FeedService] Resolving handle/custom URL: \(cleanPath)")
-            
+
             // Construire l'URL de base sans les suffixes
             let baseURL = URL(string: "https://www.youtube.com\(cleanPath)") ?? url
-            
+
             // 1) Essai via redirection implicite vers /channel/UC…
             if let redirectedChannelId = await fetchYouTubeChannelIdFromRedirect(baseURL) {
-                let rss = URL(string: "https://www.youtube.com/feeds/videos.xml?channel_id=\(redirectedChannelId)")
-                appLog("[FeedService] Channel ID via redirect: \(redirectedChannelId)")
-                return rss
+                if let rss = URL(string: "https://www.youtube.com/feeds/videos.xml?channel_id=\(redirectedChannelId)") {
+                    appLog("[FeedService] Channel ID via redirect: \(redirectedChannelId)")
+                    return YouTubeResolution(feedURL: rss, channelTitle: nil)
+                }
             }
-            
+
             // 2) Fallback: scraping robuste de la page
             let expectedHandle: String? = {
                 if cleanPath.hasPrefix("/@") {
@@ -708,28 +1163,33 @@ final class FeedService {
                 }
                 return nil
             }()
-            if let channelId = await fetchYouTubeChannelId(from: baseURL, expectedHandle: expectedHandle) {
-                let rss = URL(string: "https://www.youtube.com/feeds/videos.xml?channel_id=\(channelId)")
-                appLog("[FeedService] Channel ID via scrape: \(channelId), RSS URL: \(rss?.absoluteString ?? "nil")")
-                return rss
+            let scrapeResult = await fetchYouTubeChannelId(from: baseURL, expectedHandle: expectedHandle)
+            if let channelId = scrapeResult.channelId, let rss = URL(string: "https://www.youtube.com/feeds/videos.xml?channel_id=\(channelId)") {
+                appLog("[FeedService] Channel ID via scrape: \(channelId), RSS URL: \(rss.absoluteString), title: \(scrapeResult.channelTitle ?? "nil")")
+                return YouTubeResolution(feedURL: rss, channelTitle: scrapeResult.channelTitle)
             } else {
                 appLogWarning("[FeedService] Failed to resolve channel ID for handle/custom URL")
             }
         }
-        
+
         appLogWarning("[FeedService] Could not resolve YouTube URL to RSS")
         return nil
     }
 
-    // Scrape robuste des pages chaîne pour récupérer l'UC id
-    private func fetchYouTubeChannelId(from pageURL: URL, expectedHandle: String? = nil) async -> String? {
+    private struct YouTubeScrapeResult {
+        let channelId: String?
+        let channelTitle: String?
+    }
+
+    // Scrape robuste des pages chaîne pour récupérer l'UC id et le titre
+    private func fetchYouTubeChannelId(from pageURL: URL, expectedHandle: String? = nil) async -> YouTubeScrapeResult {
         let candidates: [URL] = [
             pageURL,
             pageURL.appendingPathComponent("about"),
             pageURL.appendingPathComponent("videos")
         ]
         appLogDebug("[FeedService] Trying to fetch channel ID from: \(pageURL.absoluteString)")
-        
+
         for (index, u) in candidates.enumerated() {
             do {
                 appLogDebug("[FeedService] Trying candidate \(index + 1): \(u.absoluteString)")
@@ -738,7 +1198,7 @@ final class FeedService {
                 req.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
                 req.setValue(LocalizationManager.shared.currentLocale.identifier.replacingOccurrences(of: "_", with: "-") + ",en;q=0.8", forHTTPHeaderField: "Accept-Language")
                 if let host = u.host?.lowercased(), host.contains("youtube.com") || host.contains("youtu.be") || host.contains("consent.youtube.com") {
-                    req.setValue("CONSENT=YES+1", forHTTPHeaderField: "Cookie")
+                    req.setValue(Self.youTubeConsentCookie, forHTTPHeaderField: "Cookie")
                 }
                 req.timeoutInterval = 15
                 let (data, response) = try await URLSession.shared.data(for: req)
@@ -746,8 +1206,12 @@ final class FeedService {
                     appLogDebug("[FeedService] HTTP response: \(httpResponse.statusCode)")
                 }
                 guard let html = String(data: data, encoding: .utf8) else { continue }
-                
-                // Si handle attendu: motifs qui lient handle ↔ UC dans le même bloc
+
+                // Extraire le titre de la chaîne depuis le HTML
+                let scrapedTitle = extractYouTubeChannelTitle(from: html)
+
+                // Si handle attendu: motifs qui lient handle ↔ UC dans le même bloc JSON
+                // Ces regex sont déjà ancrés au handle, pas besoin de vérification HTTP supplémentaire
                 if let expected = expectedHandle?.lowercased() {
                     let handleEscaped = NSRegularExpression.escapedPattern(for: expected)
                     let anchored = [
@@ -756,67 +1220,80 @@ final class FeedService {
                     ]
                     for p in anchored {
                         if let id = firstRegexCapture(in: html, pattern: p) {
-                            appLog("[FeedService] Found channel ID via handle match (\(expected)): \(id)")
-                            // Vérification supplémentaire: la page /channel/UC… doit référencer ce handle
-                            if await verifyYouTubeChannelIdMatchesHandle(id, expectedHandle: expected) {
-                                return id
-                            } else {
-                                appLogDebug("[FeedService] Discarding ID not matching expected handle: \(id) ≠ @\(expected)")
-                            }
+                            appLog("[FeedService] Found channel ID via anchored handle match (\(expected)): \(id)")
+                            return YouTubeScrapeResult(channelId: id, channelTitle: scrapedTitle)
                         }
                     }
                 }
-                
+
+                // externalId is the most reliable: it's unique per page and always represents the channel owner
+                let externalIdPattern = #"\"externalId\":\"(UC[0-9A-Za-z_-]{22})\""#
+                if let id = firstRegexCapture(in: html, pattern: externalIdPattern) {
+                    appLog("[FeedService] Found channel ID via externalId: \(id)")
+                    return YouTubeScrapeResult(channelId: id, channelTitle: scrapedTitle)
+                }
+
+                // Fallback to channelMetadata block (also reliable, scoped to the page owner)
+                let metadataPattern = #"\"channelMetadata\":\{[^}]*\"externalId\":\"(UC[0-9A-Za-z_-]{22})\""#
+                if let id = firstRegexCapture(in: html, pattern: metadataPattern) {
+                    appLog("[FeedService] Found channel ID via channelMetadata: \(id)")
+                    return YouTubeScrapeResult(channelId: id, channelTitle: scrapedTitle)
+                }
+
+                // Generic patterns - these may match IDs from recommended channels,
+                // so we verify with HTTP when a handle is expected
                 let patterns = [
                     #"\"channelId\":\"(UC[0-9A-Za-z_-]{22})\""#,
-                    #"\"externalId\":\"(UC[0-9A-Za-z_-]{22})\""#,
                     #"\"browseId\":\"(UC[0-9A-Za-z_-]{22})\""#,
                     #"CHANNEL_ID\":\"(UC[0-9A-Za-z_-]{22})\""#,
-                    #"ownerChannelId\":\"(UC[0-9A-Za-z_-]{22})\""#,
-                    #"itemprop=\\\"channelId\\\" content=\\\"(UC[0-9A-Za-z_-]{22})\\\""#,
-                    #"href=\\\"/channel/(UC[0-9A-Za-z_-]{22})\\\""#,
-                    #"href=\"/channel/(UC[0-9A-Za-z_-]{22})\""#,
-                    #"\"channelId\":\"(UC[0-9A-Za-z_-]{22})\""#,
-                    #"\"externalId\":\"(UC[0-9A-Za-z_-]{22})\""#,
-                    #"\"browseId\":\"(UC[0-9A-Za-z_-]{22})\""#,
-                    #"\"channelId\":\"(UC[0-9A-Za-z_-]{22})\""#,
-                    #"\"channelId\":\"(UC[0-9A-Za-z_-]{22})\""#,
-                    #"\"channelId\":\"(UC[0-9A-Za-z_-]{22})\""#,
-                    #"\"channelId\":\"(UC[0-9A-Za-z_-]{22})\""#,
                     #"channel_id=(UC[0-9A-Za-z_-]{22})"#,
-                    #"channel/(UC[0-9A-Za-z_-]{22})"#,
-                    #"channelId&quot;:&quot;(UC[0-9A-Za-z_-]{22})&quot;"#,
-                    #"browse_id&quot;:&quot;(UC[0-9A-Za-z_-]{22})&quot;"#,
-                    #"\"browse_id\":\"(UC[0-9A-Za-z_-]{22})\""#,
-                    #"\"channelMetadata\":{[^}]*\"externalId\":\"(UC[0-9A-Za-z_-]{22})\""#,
-                    #"\"c4TabbedHeaderRenderer\":{[^}]*\"channelId\":\"(UC[0-9A-Za-z_-]{22})\""#
+                    #"channel/(UC[0-9A-Za-z_-]{22})"#
                 ]
-                
+
                 for (patternIndex, p) in patterns.enumerated() {
                     if let id = firstRegexCapture(in: html, pattern: p) {
                         if let expected = expectedHandle?.lowercased() {
                             if await verifyYouTubeChannelIdMatchesHandle(id, expectedHandle: expected) {
                                 appLog("[FeedService] Found channel ID: \(id) with pattern \(patternIndex + 1)")
-                                return id
+                                return YouTubeScrapeResult(channelId: id, channelTitle: scrapedTitle)
                             } else {
                                 appLogDebug("[FeedService] Ignoring mismatched channel ID for handle @\(expected): \(id)")
                                 continue
                             }
                         } else {
                             appLog("[FeedService] Found channel ID: \(id) with pattern \(patternIndex + 1)")
-                            return id
+                            return YouTubeScrapeResult(channelId: id, channelTitle: scrapedTitle)
                         }
                     }
                 }
-                
+
                 appLogDebug("[FeedService] No channel ID found in this candidate")
             } catch {
                 appLogError("[FeedService] Error fetching candidate \(index + 1): \(error.localizedDescription)")
                 continue
             }
         }
-        
+
         appLogWarning("[FeedService] Failed to find channel ID in any candidate")
+        return YouTubeScrapeResult(channelId: nil, channelTitle: nil)
+    }
+
+    /// Extracts the YouTube channel title from the page HTML
+    private func extractYouTubeChannelTitle(from html: String) -> String? {
+        // Try channelMetadataRenderer.title first (most reliable for the channel's own name)
+        let titlePatterns = [
+            #"\"channelMetadataRenderer\":\{\"title\":\"([^\"]+)\""#,
+            #"\"c4TabbedHeaderRenderer\":\{[^}]*\"title\":\"([^\"]+)\""#,
+            #"<meta property=\"og:title\" content=\"([^\"]+)\""#,
+            #"<title>([^<]+?)(?:\s*[-–—]\s*YouTube)?\s*</title>"#
+        ]
+        for p in titlePatterns {
+            if let title = firstRegexCapture(in: html, pattern: p)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+               !title.isEmpty, title != "YouTube" {
+                return title
+            }
+        }
         return nil
     }
 
@@ -846,7 +1323,7 @@ final class FeedService {
                 if !id.isEmpty, let rss = URL(string: "https://www.youtube.com/feeds/videos.xml?channel_id=\(id)") { return rss }
             }
             // Sinon, tenter de récupérer l'UC id depuis la page auteur
-            if let uc = await fetchYouTubeChannelId(from: authorURL) {
+            if let uc = await fetchYouTubeChannelId(from: authorURL).channelId {
                 return URL(string: "https://www.youtube.com/feeds/videos.xml?channel_id=\(uc)")
             }
         } catch {
@@ -865,7 +1342,724 @@ final class FeedService {
         return nil
     }
     
-    func addFeed(from urlString: String) async throws {
+    // MARK: - Music helpers
+
+    private func isAppleMusicHost(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        return host == "music.apple.com" || host == "itunes.apple.com"
+    }
+
+    private func isSpotifyHost(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        return host == "open.spotify.com" || host == "play.spotify.com"
+    }
+
+    /// Détecte si un feedURL est un flux Apple Music (music.apple.com ou rss.applemarketingtools.com)
+    func isAppleMusicFeedURL(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        return host == "music.apple.com" || host == "itunes.apple.com" || host.hasSuffix(".itunes.apple.com") || host == "rss.applemarketingtools.com"
+    }
+
+    /// Détecte si un feedURL est un flux Spotify (open.spotify.com)
+    func isSpotifyFeedURL(_ url: URL) -> Bool {
+        isSpotifyHost(url)
+    }
+
+    /// Détecte si un feedURL est un flux musique géré nativement (Apple Music / Spotify)
+    func isMusicFeedURL(_ url: URL) -> Bool {
+        isAppleMusicFeedURL(url) || isSpotifyFeedURL(url)
+    }
+
+    /// Vérifie si un feed (par ID) est un flux Apple Music
+    func isAppleMusicFeed(feedId: UUID) -> Bool {
+        guard let feed = feeds.first(where: { $0.id == feedId }) else { return false }
+        return isAppleMusicFeedURL(feed.feedURL) || isAppleMusicFeedURL(feed.siteURL ?? feed.feedURL)
+    }
+
+    /// Vérifie si un feed (par ID) est un flux musique (Apple Music / Spotify)
+    func isMusicFeed(feedId: UUID) -> Bool {
+        guard let feed = feeds.first(where: { $0.id == feedId }) else { return false }
+        return isMusicFeedURL(feed.feedURL) || isMusicFeedURL(feed.siteURL ?? feed.feedURL)
+    }
+
+    private func canonicalSpotifyURL(from url: URL) -> URL {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        components.query = nil
+        components.fragment = nil
+        return components.url ?? url
+    }
+
+    private func spotifyEntityId(from url: URL, type: String) -> String? {
+        let parts = url.pathComponents.filter { $0 != "/" }
+        guard let idx = parts.firstIndex(of: type), idx + 1 < parts.count else { return nil }
+        let raw = parts[idx + 1].trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return raw.isEmpty ? nil : raw
+    }
+
+    private func spotifyTrackId(from url: URL) -> String? {
+        spotifyEntityId(from: canonicalSpotifyURL(from: url), type: "track")
+    }
+
+    private func spotifyTrackId(from uri: String?) -> String? {
+        guard let uri else { return nil }
+        let prefix = "spotify:track:"
+        guard uri.hasPrefix(prefix) else { return nil }
+        let value = String(uri.dropFirst(prefix.count))
+        return value.isEmpty ? nil : value
+    }
+
+#if canImport(WebKit)
+    private struct SpotifyRenderedSongPayload: Decodable {
+        let url: String
+        let title: String
+        let artist: String?
+        let artwork: String?
+    }
+
+    private struct SpotifyRenderedPlaylistPayload: Decodable {
+        let title: String?
+        let totalTracks: Int?
+        let songs: [SpotifyRenderedSongPayload]
+    }
+
+    private final class SpotifyPageNavigationDelegate: NSObject, WKNavigationDelegate {
+        var onFinish: (() -> Void)?
+        var onFail: ((Error) -> Void)?
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            onFinish?()
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            onFail?(error)
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            onFail?(error)
+        }
+    }
+#endif
+
+    private func spotifyEntityType(from url: URL) -> String? {
+        let parts = canonicalSpotifyURL(from: url).pathComponents.filter { $0 != "/" }
+        guard let first = parts.first?.lowercased(), !first.isEmpty else { return nil }
+        return first
+    }
+
+    private func spotifyFallbackTitle(from url: URL) -> String {
+        switch spotifyEntityType(from: url) {
+        case "playlist":
+            return "Playlist Spotify"
+        case "album":
+            return "Album Spotify"
+        case "track":
+            return "Titre Spotify"
+        case "artist":
+            return "Artiste Spotify"
+        case "show":
+            return "Podcast Spotify"
+        case "episode":
+            return "Épisode Spotify"
+        default:
+            return "Lien Spotify"
+        }
+    }
+
+    private func fetchHTMLPageData(from url: URL) async throws -> Data {
+        guard let targetURL = httpsOnlyURL(from: url) else {
+            appLogWarning("[FeedService] Refused non-HTTPS page URL: \(url.absoluteString)")
+            throw FeedError.invalidURL
+        }
+
+        var request = URLRequest(url: targetURL)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        request.setValue(LocalizationManager.shared.currentLocale.identifier.replacingOccurrences(of: "_", with: "-") + ",en;q=0.8", forHTTPHeaderField: "Accept-Language")
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 20
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            appLogWarning("[FeedService] HTML page HTTP \(http.statusCode) for \(targetURL.absoluteString)")
+            throw FeedError.invalidURL
+        }
+        return data
+    }
+
+#if canImport(WebKit)
+    private func loadWebPage(_ url: URL, in webView: WKWebView) async throws {
+        let delegate = SpotifyPageNavigationDelegate()
+        webView.navigationDelegate = delegate
+        webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            var resumed = false
+
+            delegate.onFinish = {
+                guard !resumed else { return }
+                resumed = true
+                continuation.resume()
+            }
+
+            delegate.onFail = { error in
+                guard !resumed else { return }
+                resumed = true
+                continuation.resume(throwing: error)
+            }
+
+            webView.load(URLRequest(url: url))
+        }
+    }
+
+    private func evaluateJavaScript(_ script: String, in webView: WKWebView) async throws -> Any? {
+        try await withCheckedThrowingContinuation { continuation in
+            webView.evaluateJavaScript(script) { result, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: result)
+                }
+            }
+        }
+    }
+
+    private func intFromJavaScriptResult(_ value: Any?) -> Int? {
+        if let int = value as? Int { return int }
+        if let number = value as? NSNumber { return number.intValue }
+        if let text = value as? String { return Int(text) }
+        return nil
+    }
+
+    private func scrapeSpotifyPageInWebView(from url: URL) async -> (title: String?, songs: [(url: URL, title: String, artist: String?, artwork: URL?)]) {
+        let canonicalURL = canonicalSpotifyURL(from: url)
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = .nonPersistent()
+        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 1280, height: 900), configuration: config)
+
+        do {
+            try await loadWebPage(canonicalURL, in: webView)
+
+            let rowCountScript = #"document.querySelectorAll('[data-testid="tracklist-row"]').length"#
+            let snapshotScript = #"""
+            (function() {
+              const normalizeText = (value) => (value || "").replace(/\s+/g, " ").trim();
+              const parseTotalTracks = () => {
+                const meta = document.querySelector('meta[name="music:song_count"]');
+                if (meta) {
+                  const direct = parseInt((meta.getAttribute('content') || '').replace(/[^\d]/g, ''), 10);
+                  if (Number.isFinite(direct) && direct > 0) return direct;
+                }
+                const text = document.body ? (document.body.innerText || "") : "";
+                const match = text.match(/([0-9][0-9\s.,]*)\s*(titres|morceaux|songs|tracks)\b/i);
+                if (!match) return null;
+                const digits = match[1].replace(/[^\d]/g, "");
+                const value = parseInt(digits, 10);
+                return Number.isFinite(value) && value > 0 ? value : null;
+              };
+              const readTitle = () => {
+                const og = normalizeText(document.querySelector('meta[property="og:title"]')?.getAttribute('content'));
+                if (og) return og;
+                const h1 = normalizeText(document.querySelector('h1')?.textContent);
+                return h1 || null;
+              };
+              const playlistArtwork = document.querySelector('meta[property="og:image"]')?.getAttribute('content') || null;
+              const songs = Array.from(document.querySelectorAll('[data-testid="tracklist-row"]')).map((row) => {
+                const link = row.querySelector('[data-testid="internal-track-link"]');
+                if (!link || !link.href) return null;
+
+                const title = normalizeText(link.textContent);
+                if (!title) return null;
+
+                const artistLinks = Array.from(row.querySelectorAll('a[href*="/artist/"]'));
+                const artists = artistLinks
+                  .map((artistLink) => normalizeText(artistLink.textContent))
+                  .filter(Boolean);
+                const artist = Array.from(new Set(artists)).join(', ') || null;
+                const artwork = row.querySelector('img')?.src || playlistArtwork || null;
+
+                return { url: link.href, title, artist, artwork };
+              }).filter(Boolean);
+
+              return JSON.stringify({
+                title: readTitle(),
+                totalTracks: parseTotalTracks(),
+                songs
+              });
+            })()
+            """#
+            let scrollScript = #"""
+            (function() {
+              const rows = Array.from(document.querySelectorAll('[data-testid="tracklist-row"]'));
+              const lastRow = rows[rows.length - 1];
+              if (!lastRow) return 0;
+              lastRow.scrollIntoView({ block: 'end' });
+              return rows.length;
+            })()
+            """#
+
+            for _ in 0..<40 {
+                let rowCount = intFromJavaScriptResult(try await evaluateJavaScript(rowCountScript, in: webView)) ?? 0
+                if rowCount > 0 { break }
+                try? await Task.sleep(nanoseconds: 250_000_000)
+            }
+
+            var aggregatedSongsByURL: [String: SpotifyRenderedSongPayload] = [:]
+            var orderedSongURLs: [String] = []
+            var playlistTitle: String?
+            var totalTracks: Int?
+            var stableIterations = 0
+            var lastCount = 0
+
+            for _ in 0..<240 {
+                if let jsonString = try await evaluateJavaScript(snapshotScript, in: webView) as? String,
+                   let data = jsonString.data(using: .utf8),
+                   let payload = try? JSONDecoder().decode(SpotifyRenderedPlaylistPayload.self, from: data) {
+                    if playlistTitle == nil || playlistTitle?.isEmpty == true {
+                        playlistTitle = payload.title
+                    }
+                    if totalTracks == nil || totalTracks == 0 {
+                        totalTracks = payload.totalTracks
+                    }
+                    for song in payload.songs {
+                        if aggregatedSongsByURL[song.url] == nil {
+                            orderedSongURLs.append(song.url)
+                        }
+                        aggregatedSongsByURL[song.url] = song
+                    }
+                }
+
+                let currentCount = aggregatedSongsByURL.count
+                if currentCount == lastCount {
+                    stableIterations += 1
+                } else {
+                    stableIterations = 0
+                    lastCount = currentCount
+                }
+
+                if let totalTracks, totalTracks > 0, currentCount >= totalTracks {
+                    break
+                }
+                if stableIterations >= 20 {
+                    break
+                }
+
+                _ = try await evaluateJavaScript(scrollScript, in: webView)
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            }
+
+            let songs = orderedSongURLs.compactMap { urlString -> (url: URL, title: String, artist: String?, artwork: URL?)? in
+                guard let item = aggregatedSongsByURL[urlString] else { return nil }
+                guard let songURL = URL(string: item.url) else { return nil }
+                let normalizedURL = canonicalSpotifyURL(from: songURL)
+                guard spotifyTrackId(from: normalizedURL) != nil else { return nil }
+
+                let title = item.title.decodedHTMLEntities.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !title.isEmpty else { return nil }
+
+                let artist = item.artist?.decodedHTMLEntities.trimmingCharacters(in: .whitespacesAndNewlines)
+                let artwork = item.artwork
+                    .flatMap(URL.init(string:))
+                    .flatMap { httpsOnlyImageURL($0) }
+
+                return (url: normalizedURL, title: title, artist: artist?.isEmpty == true ? nil : artist, artwork: artwork)
+            }
+
+            guard !songs.isEmpty || playlistTitle != nil else {
+                appLogWarning("[FeedService] Spotify WebView extraction returned no usable tracks")
+                return (nil, [])
+            }
+
+            let title = playlistTitle?
+                .replacingOccurrences(of: " | Spotify Playlist", with: "")
+                .replacingOccurrences(of: " | Spotify", with: "")
+                .decodedHTMLEntities
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            appLog("[FeedService] Spotify WebView extracted \(songs.count)/\(totalTracks ?? songs.count) tracks")
+            return (title?.isEmpty == false ? title : nil, songs)
+        } catch {
+            appLogWarning("[FeedService] Spotify WebView extraction failed: \(error.localizedDescription)")
+            return (nil, [])
+        }
+    }
+#endif
+
+    /// Scrape une page Spotify et retourne (titre, [(trackURL, titre, artiste, artworkURL)])
+    /// Utilise les meta tags music:song pour l'ordre, puis le script initialState pour les métadonnées.
+    private func scrapeSpotifyPage(from url: URL) async -> (title: String?, songs: [(url: URL, title: String, artist: String?, artwork: URL?)]) {
+        let canonicalURL = canonicalSpotifyURL(from: url)
+        let rawHTMLData = try? await fetchHTMLPageData(from: canonicalURL)
+        guard let data = rawHTMLData,
+              let html = String(data: data, encoding: .utf8) else {
+            #if canImport(WebKit)
+            let rendered = await scrapeSpotifyPageInWebView(from: canonicalURL)
+            if !rendered.songs.isEmpty || rendered.title != nil {
+                return rendered
+            }
+            #endif
+            appLogWarning("[FeedService] Spotify page fetch failed for \(canonicalURL.absoluteString)")
+            return (spotifyFallbackTitle(from: canonicalURL), [])
+        }
+
+        var playlistTitle: String?
+        if let ogTitle = firstRegexCapture(in: html, pattern: #"<meta\s+property="og:title"\s+content="([^"]+)""#)?
+            .decodedHTMLEntities
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !ogTitle.isEmpty {
+            playlistTitle = ogTitle
+        }
+
+        let playlistArtworkURL = firstRegexCapture(in: html, pattern: #"<meta\s+property="og:image"\s+content="([^"]+)""#)
+            .flatMap { URL(string: $0) }
+            .flatMap { httpsOnlyImageURL($0) }
+
+        let songCount = firstRegexCapture(in: html, pattern: #"<meta\s+name="music:song_count"\s+content="(\d+)""#)
+            .flatMap(Int.init)
+
+        let songPattern = #"<meta\s+name="music:song"\s+content="([^"]+)""#
+        var songURLs: [(url: URL, id: String)] = []
+        var seenSpotifyTrackIDs = Set<String>()
+        do {
+            let regex = try NSRegularExpression(pattern: songPattern, options: [.caseInsensitive])
+            let nsHTML = html as NSString
+            let matches = regex.matches(in: html, options: [], range: NSRange(location: 0, length: nsHTML.length))
+            for match in matches {
+                guard match.numberOfRanges >= 2,
+                      let range = Range(match.range(at: 1), in: html),
+                      let songURL = URL(string: String(html[range])) else { continue }
+                let normalizedSongURL = canonicalSpotifyURL(from: songURL)
+                guard let trackId = spotifyTrackId(from: normalizedSongURL) else { continue }
+                if seenSpotifyTrackIDs.insert(trackId).inserted {
+                    songURLs.append((url: normalizedSongURL, id: trackId))
+                }
+            }
+        } catch {}
+
+        var metadataByTrackID: [String: (title: String, artist: String?, artwork: URL?)] = [:]
+        if let initialStateBase64 = firstRegexCapture(
+            in: html,
+            pattern: #"<script[^>]*id="initialState"[^>]*>([^<]+)</script>"#
+        )?.trimmingCharacters(in: .whitespacesAndNewlines),
+           let decodedData = Data(base64Encoded: initialStateBase64, options: [.ignoreUnknownCharacters]),
+           let jsonObject = try? JSONSerialization.jsonObject(with: decodedData),
+           let initialState = jsonObject as? [String: Any],
+           let entities = initialState["entities"] as? [String: Any],
+           let itemsByURI = entities["items"] as? [String: Any] {
+            for case let entity as [String: Any] in itemsByURI.values {
+                if playlistTitle == nil,
+                   let entityName = entity["name"] as? String,
+                   !entityName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    playlistTitle = entityName.decodedHTMLEntities.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+
+                if let content = entity["content"] as? [String: Any],
+                   let items = content["items"] as? [[String: Any]] {
+                    for item in items {
+                        guard let itemV2 = item["itemV2"] as? [String: Any],
+                              let trackData = itemV2["data"] as? [String: Any],
+                              let trackID = spotifyTrackId(from: trackData["uri"] as? String) else { continue }
+
+                        let title = ((trackData["name"] as? String) ?? "").decodedHTMLEntities.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if title.isEmpty { continue }
+
+                        let artistNames = ((trackData["artists"] as? [String: Any])?["items"] as? [[String: Any]])?
+                            .compactMap { ($0["profile"] as? [String: Any])?["name"] as? String }
+                            .map { $0.decodedHTMLEntities.trimmingCharacters(in: .whitespacesAndNewlines) }
+                            .filter { !$0.isEmpty } ?? []
+                        let artist = artistNames.isEmpty ? nil : artistNames.joined(separator: ", ")
+
+                        let coverSources = ((trackData["albumOfTrack"] as? [String: Any])?["coverArt"] as? [String: Any])?["sources"] as? [[String: Any]]
+                        let artworkCandidates: [(Int, URL)] = (coverSources ?? []).compactMap { source in
+                            guard let raw = source["url"] as? String,
+                                  let url = URL(string: raw) else { return nil }
+                            let width = source["width"] as? Int ?? source["height"] as? Int ?? 0
+                            return (width, url)
+                        }
+                        let artworkURL: URL? = artworkCandidates
+                            .max(by: { $0.0 < $1.0 })
+                            .flatMap { httpsOnlyImageURL($0.1) }
+
+                        metadataByTrackID[trackID] = (title: title, artist: artist, artwork: artworkURL)
+                    }
+                }
+            }
+        }
+
+        appLog("[FeedService] Found \(songURLs.count) Spotify track URLs from page")
+        if let songCount, songCount > songURLs.count {
+            appLog("[FeedService] Spotify exposed \(songURLs.count)/\(songCount) tracks on the public page")
+        }
+
+        var songs: [(url: URL, title: String, artist: String?, artwork: URL?)] = []
+        for entry in songURLs {
+            if let meta = metadataByTrackID[entry.id] {
+                songs.append((url: entry.url, title: meta.title, artist: meta.artist, artwork: meta.artwork ?? playlistArtworkURL))
+            }
+        }
+
+        #if canImport(WebKit)
+        if songs.isEmpty || (songCount != nil && songs.count < (songCount ?? 0)) {
+            let rendered = await scrapeSpotifyPageInWebView(from: canonicalURL)
+            if rendered.songs.count > songs.count {
+                let title = rendered.title ?? playlistTitle ?? spotifyFallbackTitle(from: canonicalURL)
+                return (title, rendered.songs)
+            }
+            if playlistTitle == nil, let renderedTitle = rendered.title {
+                playlistTitle = renderedTitle
+            }
+        }
+        #endif
+
+        appLog("[FeedService] Scraped Spotify page: title=\(playlistTitle ?? "nil"), songs=\(songs.count)")
+        return (playlistTitle, songs)
+    }
+
+    /// Scrape une page Apple Music et retourne (titre, [(songURL, titre, artiste, artworkURL)])
+    /// Utilise les meta tags music:song pour les URLs, puis l'API iTunes Lookup pour les métadonnées
+    private func scrapeAppleMusicPage(from url: URL) async -> (title: String?, songs: [(url: URL, title: String, artist: String?, artwork: URL?)]) {
+        guard let data = try? await fetchFeedData(from: url),
+              let html = String(data: data, encoding: .utf8) else { return (nil, []) }
+
+        // Titre depuis og:title
+        var playlistTitle: String?
+        if let ogTitle = firstRegexCapture(in: html, pattern: #"<meta\s+property="og:title"\s+content="([^"]+)""#) {
+            let cleaned = ogTitle
+                .replacingOccurrences(of: " sur Apple Music", with: "")
+                .replacingOccurrences(of: " on Apple Music", with: "")
+                .replacingOccurrences(of: "&#x27;", with: "'")
+                .replacingOccurrences(of: "&amp;", with: "&")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !cleaned.isEmpty { playlistTitle = cleaned }
+        }
+
+        // Extraire les URLs des morceaux via <meta property="music:song">
+        let songPattern = #"<meta\s+property="music:song"\s+content="([^"]+)""#
+        var songURLs: [(url: URL, id: String)] = []
+        do {
+            let regex = try NSRegularExpression(pattern: songPattern, options: [.caseInsensitive])
+            let nsHTML = html as NSString
+            let matches = regex.matches(in: html, options: [], range: NSRange(location: 0, length: nsHTML.length))
+            for match in matches {
+                guard match.numberOfRanges >= 2,
+                      let range = Range(match.range(at: 1), in: html),
+                      let songURL = URL(string: String(html[range])) else { continue }
+                // L'ID est le dernier composant du path : /song/name/12345
+                if let songId = songURL.pathComponents.last, songId.allSatisfy(\.isNumber) {
+                    songURLs.append((url: songURL, id: songId))
+                }
+            }
+        } catch {}
+
+        appLog("[FeedService] Found \(songURLs.count) song URLs from Apple Music page")
+
+        guard !songURLs.isEmpty else { return (playlistTitle, []) }
+
+        // Récupérer les métadonnées via l'API iTunes Lookup (batch par 150)
+        var lookupMap: [String: (name: String, artist: String, artwork: URL?, releaseDate: String?)] = [:]
+
+        let batches = stride(from: 0, to: songURLs.count, by: 150).map {
+            Array(songURLs[$0..<min($0 + 150, songURLs.count)])
+        }
+
+        for batch in batches {
+            let ids = batch.map(\.id).joined(separator: ",")
+            guard let lookupURL = URL(string: "https://itunes.apple.com/lookup?id=\(ids)") else { continue }
+            guard let lookupData = try? await fetchFeedData(from: lookupURL) else { continue }
+
+            struct ITunesLookup: Decodable {
+                let results: [ITunesTrack]?
+            }
+            struct ITunesTrack: Decodable {
+                let trackId: Int?
+                let trackName: String?
+                let artistName: String?
+                let artworkUrl100: String?
+                let releaseDate: String?
+            }
+
+            if let lookup = try? JSONDecoder().decode(ITunesLookup.self, from: lookupData) {
+                for track in (lookup.results ?? []) {
+                    guard let trackId = track.trackId, let name = track.trackName else { continue }
+                    let artworkURL: URL? = track.artworkUrl100
+                        .flatMap { $0.replacingOccurrences(of: "100x100bb", with: "600x600bb") }
+                        .flatMap { URL(string: $0) }
+                    lookupMap[String(trackId)] = (name: name, artist: track.artistName ?? "", artwork: artworkURL, releaseDate: track.releaseDate)
+                }
+            }
+        }
+
+        appLog("[FeedService] iTunes Lookup resolved \(lookupMap.count)/\(songURLs.count) tracks")
+
+        // Combiner URLs + métadonnées
+        var songs: [(url: URL, title: String, artist: String?, artwork: URL?)] = []
+        for entry in songURLs {
+            if let meta = lookupMap[entry.id] {
+                songs.append((url: entry.url, title: meta.name, artist: meta.artist, artwork: meta.artwork))
+            } else {
+                // Fallback : titre depuis le slug de l'URL
+                let pathComponents = entry.url.pathComponents
+                var songTitle = "Unknown"
+                if let songIdx = pathComponents.firstIndex(of: "song"), songIdx + 1 < pathComponents.count {
+                    songTitle = pathComponents[songIdx + 1]
+                        .replacingOccurrences(of: "-", with: " ")
+                        .capitalized
+                }
+                songs.append((url: entry.url, title: songTitle, artist: nil, artwork: nil))
+            }
+        }
+
+        appLog("[FeedService] Scraped Apple Music page: title=\(playlistTitle ?? "nil"), songs=\(songs.count)")
+        return (playlistTitle, songs)
+    }
+
+    /// Parse les morceaux scrapés d'une page Apple Music et crée des articles
+    /// Extrait l'ID numérique d'une URL Apple Music song (le dernier composant numérique du path)
+    private func appleMusicSongId(from url: URL) -> String? {
+        url.pathComponents.last(where: { $0.allSatisfy(\.isNumber) && !$0.isEmpty })
+    }
+
+    private func parseSpotifySongs(songs: [(url: URL, title: String, artist: String?, artwork: URL?)], feed: Feed, seenKeys: inout Set<String>, titleToArticleByFeed: inout [UUID: [String: Article]], urlToArticle: inout [String: Article], stream: Bool) -> [Article] {
+        var created: [Article] = []
+
+        for song in songs {
+            let trackId = spotifyTrackId(from: song.url)
+            let key = trackId.map { "spotify://\(feed.id)/\($0)" } ?? "spotify://\(feed.id)/\(canonicalKey(for: song.url, guid: nil))"
+
+            if seenKeys.contains(key) { continue }
+
+            let displayTitle = if let artist = song.artist, !artist.isEmpty {
+                "\(song.title) — \(artist)"
+            } else {
+                song.title
+            }
+
+            let article = Article(
+                feedId: feed.id,
+                title: displayTitle,
+                url: song.url,
+                author: song.artist,
+                publishedAt: Date(),
+                contentHTML: nil,
+                contentText: nil,
+                imageURL: song.artwork,
+                summary: song.artist,
+                readingTime: nil,
+                lang: nil,
+                score: nil
+            )
+            modelContext.insert(article)
+            if stream { self.articles.append(article) }
+            seenKeys.insert(key)
+            urlToArticle[key] = article
+            titleToArticleByFeed[feed.id, default: [:]][Self.normalizeTitle(song.title)] = article
+            created.append(article)
+        }
+
+        appLog("[FeedService] Created \(created.count) Spotify articles for '\(feed.title)'")
+        return created
+    }
+
+    private func removeSpotifyFallbackArticles(for feed: Feed) {
+        let fallbackURL = canonicalSpotifyURL(from: feed.feedURL)
+        let fallbackArticles = articles.filter { article in
+            guard article.feedId == feed.id else { return false }
+            guard article.summary == "Ouvrir dans Spotify" else { return false }
+            guard article.author == "Spotify" else { return false }
+            return canonicalSpotifyURL(from: article.url) == fallbackURL
+        }
+
+        guard !fallbackArticles.isEmpty else { return }
+
+        for article in fallbackArticles {
+            articles.removeAll { $0.id == article.id }
+            modelContext.delete(article)
+        }
+
+        appLog("[FeedService] Removed \(fallbackArticles.count) Spotify fallback article(s) for '\(feed.title)'")
+    }
+
+    private func parseSpotifyFallbackArticle(feed: Feed, seenKeys: inout Set<String>, titleToArticleByFeed: inout [UUID: [String: Article]], urlToArticle: inout [String: Article], stream: Bool) -> [Article] {
+        let fallbackURL = canonicalSpotifyURL(from: feed.feedURL)
+        let key = "spotify://\(feed.id)/fallback/\(canonicalKey(for: fallbackURL, guid: nil))"
+        if seenKeys.contains(key) { return [] }
+
+        let title = feed.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? spotifyFallbackTitle(from: fallbackURL)
+            : feed.title
+
+        if titleToArticleByFeed[feed.id]?[Self.normalizeTitle(title)] != nil {
+            return []
+        }
+
+        let article = Article(
+            feedId: feed.id,
+            title: title,
+            url: fallbackURL,
+            author: "Spotify",
+            publishedAt: Date(),
+            contentHTML: nil,
+            contentText: nil,
+            imageURL: nil,
+            summary: "Ouvrir dans Spotify",
+            readingTime: nil,
+            lang: nil,
+            score: nil
+        )
+        modelContext.insert(article)
+        if stream { self.articles.append(article) }
+        seenKeys.insert(key)
+        urlToArticle[key] = article
+        titleToArticleByFeed[feed.id, default: [:]][Self.normalizeTitle(title)] = article
+        appLog("[FeedService] Created Spotify fallback article for '\(feed.title)'")
+        return [article]
+    }
+
+    private func parseAppleMusicSongs(songs: [(url: URL, title: String, artist: String?, artwork: URL?)], feed: Feed, seenKeys: inout Set<String>, titleToArticleByFeed: inout [UUID: [String: Article]], urlToArticle: inout [String: Article], stream: Bool) -> [Article] {
+        var created: [Article] = []
+
+        for song in songs {
+            // Utiliser une clé stable basée sur l'ID de la chanson + feedId (indépendant de la locale de l'URL)
+            // IMPORTANT: la clé DOIT inclure le feedId car le même morceau peut apparaître dans plusieurs playlists
+            let songId = appleMusicSongId(from: song.url)
+            let key = songId.map { "applemusic://\(feed.id)/\($0)" } ?? "applemusic://\(feed.id)/\(canonicalKey(for: song.url, guid: nil))"
+
+            // Dédup uniquement par clé feed-specific (pas par URL globale, sinon les playlists partagent les morceaux)
+            if seenKeys.contains(key) { continue }
+
+            let displayTitle = if let artist = song.artist, !artist.isEmpty {
+                "\(song.title) — \(artist)"
+            } else {
+                song.title
+            }
+
+            let article = Article(
+                feedId: feed.id,
+                title: displayTitle,
+                url: song.url,
+                author: song.artist,
+                publishedAt: Date(),
+                contentHTML: nil,
+                contentText: nil,
+                imageURL: song.artwork,
+                summary: song.artist,
+                readingTime: nil,
+                lang: nil,
+                score: nil
+            )
+            modelContext.insert(article)
+            if stream { self.articles.append(article) }
+            seenKeys.insert(key)
+            urlToArticle[key] = article
+            titleToArticleByFeed[feed.id, default: [:]][Self.normalizeTitle(song.title)] = article
+            created.append(article)
+        }
+
+        appLog("[FeedService] Created \(created.count) Apple Music articles for '\(feed.title)'")
+        return created
+    }
+
+    @discardableResult
+    func addFeed(from urlString: String) async throws -> Feed {
         // Sanitize URL string: trim spaces/newlines, drop leading '@', ensure scheme
         let sanitized = sanitizeFeedURLString(urlString)
         guard let initialURL = URL(string: sanitized)?.absoluteURL ?? {
@@ -880,15 +2074,34 @@ final class FeedService {
         }
         // Conversion éventuelle YouTube vers flux RSS
         let url: URL
+        var youTubeChannelTitle: String?
+        var appleMusicFeedTitle: String?
+        var spotifyFeedTitle: String?
         if isYouTubeHost(httpsURL) {
             appLog("[FeedService] YouTube URL detected: \(httpsURL.absoluteString)")
-            if let rss = await resolveYouTubeFeedURL(from: httpsURL) {
-                appLog("[FeedService] Resolved to RSS: \(rss.absoluteString)")
-                url = rss
+            if let resolution = await resolveYouTubeFeedURL(from: httpsURL) {
+                appLog("[FeedService] Resolved to RSS: \(resolution.feedURL.absoluteString)")
+                url = resolution.feedURL
+                youTubeChannelTitle = resolution.channelTitle
             } else {
                 appLogWarning("[FeedService] Failed to resolve YouTube URL, using original")
                 url = httpsURL
             }
+        } else if isAppleMusicHost(httpsURL) {
+            appLog("[FeedService] Apple Music URL detected: \(httpsURL.absoluteString)")
+            // Stocker l'URL Apple Music directement comme feedURL
+            url = httpsURL
+            // Scraper le titre de la playlist
+            let scraped = await scrapeAppleMusicPage(from: httpsURL)
+            appleMusicFeedTitle = scraped.title
+            appLog("[FeedService] Apple Music playlist: '\(appleMusicFeedTitle ?? "nil")' with \(scraped.songs.count) songs")
+        } else if isSpotifyHost(httpsURL) {
+            let normalizedSpotifyURL = canonicalSpotifyURL(from: httpsURL)
+            appLog("[FeedService] Spotify URL detected: \(normalizedSpotifyURL.absoluteString)")
+            url = normalizedSpotifyURL
+            let scraped = await scrapeSpotifyPage(from: normalizedSpotifyURL)
+            spotifyFeedTitle = scraped.title
+            appLog("[FeedService] Spotify playlist: '\(spotifyFeedTitle ?? "nil")' with \(scraped.songs.count) songs")
         } else {
             // Pour toute URL de page (y compris /le-blog), tenter d'abord de découvrir un flux
             if isLikelyFeedURL(httpsURL) {
@@ -906,7 +2119,18 @@ final class FeedService {
         // Enrichir le titre + siteURL via FeedKit si possible
         var resolvedTitle: String?
         var resolvedSiteURL: URL?
+
+        // Flux musique: titre déjà récupéré, pas de parsing FeedKit
+        if isAppleMusicFeedURL(url) {
+            resolvedTitle = appleMusicFeedTitle
+            resolvedSiteURL = httpsURL // garder l'URL Apple Music originale comme siteURL
+        } else if isSpotifyFeedURL(url) {
+            resolvedTitle = spotifyFeedTitle
+            resolvedSiteURL = url
+        }
+
         #if canImport(FeedKit)
+        if !isMusicFeedURL(url) {
         do {
             appLog("[FeedService] Parsing feed: \(url.absoluteString)")
             let rawData = try await fetchFeedData(from: url)
@@ -967,15 +2191,26 @@ final class FeedService {
             appLogError("[FeedService] Feed parsing error: \(error.localizedDescription)")
             // on tombera sur le fallback
         }
+        } // end if !isMusicFeedURL
         #endif
 
-        // Fallback: titre depuis le host
+        // Fallback: use YouTube channel title scraped during resolution, then host prettification
+        if resolvedTitle == nil {
+            resolvedTitle = appleMusicFeedTitle
+                ?? spotifyFeedTitle
+                ?? (isSpotifyFeedURL(url) ? spotifyFallbackTitle(from: url) : nil)
+                ?? youTubeChannelTitle
+        }
         if resolvedTitle == nil {
             let host = URLComponents(url: url, resolvingAgainstBaseURL: false)?.host ?? url.host
             resolvedTitle = prettifyHost(host ?? url.absoluteString)
         }
         if resolvedSiteURL == nil, let scheme = url.scheme, let host = url.host {
             resolvedSiteURL = URL(string: "\(scheme)://\(host)")
+        }
+        // For YouTube feeds, preserve the original channel URL as siteURL
+        if resolvedSiteURL == nil || resolvedSiteURL?.path == "/", isYouTubeHost(httpsURL) {
+            resolvedSiteURL = httpsURL
         }
 
         let newFeed = Feed(
@@ -1006,6 +2241,7 @@ final class FeedService {
         let initialCutoff = Calendar.current.date(byAdding: .day, value: -21, to: Date())
         try await refreshArticles(for: newFeed.id, earliestDate: initialCutoff, stream: true)
         updateAppBadge()
+        return newFeed
     }
 
     private func sanitizeFeedURLString(_ raw: String) -> String {
@@ -1026,9 +2262,26 @@ final class FeedService {
         return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private func isLegacyAppleRSSURL(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        guard host == "ax.itunes.apple.com" || host == "itunes.apple.com" else { return false }
+        return url.path.lowercased().contains("/webobjects/mzstoreservices.woa/ws/rss/")
+    }
+
     private func httpsOnlyURL(from url: URL) -> URL? {
-        if url.scheme == "https" { return url }
-        if url.scheme == "http", var components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        let scheme = components.scheme?.lowercased()
+        let host = components.host?.lowercased()
+
+        if host == "ax.itunes.apple.com" {
+            // Ancienne URL Apple RSS: ce sous-domaine ne répond pas correctement en HTTPS.
+            components.host = "itunes.apple.com"
+        }
+
+        if scheme == "https" {
+            return components.url
+        }
+        if scheme == "http" {
             components.scheme = "https"
             return components.url
         }
@@ -1039,29 +2292,100 @@ final class FeedService {
         return url.flatMap { httpsOnlyURL(from: $0) }
     }
 
-    func refreshArticles(for feedId: UUID? = nil, earliestDate: Date? = nil, stream: Bool = false) async throws {
-        if isRefreshing { return }
-        isRefreshing = true
-        refreshingFeedId = feedId
-        defer {
-            isRefreshing = false
-            refreshingFeedId = nil
-            #if os(macOS)
-            HapticFeedback.tap()
-            #endif
+    private func upscaledAppleArtworkURL(_ url: URL?) -> URL? {
+        guard let normalized = httpsOnlyImageURL(url) else { return nil }
+        guard let host = normalized.host?.lowercased(), host.contains("mzstatic.com") else { return normalized }
+
+        let absolute = normalized.absoluteString
+        let pattern = #"/\d+x\d+bb(?:-\d+)?\.(png|jpg|jpeg|webp)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return normalized
         }
+        let range = NSRange(location: 0, length: absolute.utf16.count)
+        let replacement = "/1200x1200bb.$1"
+        let rewritten = regex.stringByReplacingMatches(in: absolute, options: [], range: range, withTemplate: replacement)
+        return URL(string: rewritten) ?? normalized
+    }
+
+    #if canImport(FeedKit)
+    private func preferredAppleArtworkURL(from entry: FeedKit.AtomFeedEntry, articleURL: URL) -> URL? {
+        let html = entry.content?.text ?? entry.summary?.text
+        if let directArtwork = upscaledAppleArtworkURL(extractImageURL(fromHTML: html, baseURL: articleURL)) {
+            return directArtwork
+        }
+        if let feedArtwork = upscaledAppleArtworkURL(extractAtomImage(entry)) {
+            return feedArtwork
+        }
+        return nil
+    }
+    #endif
+
+    func refreshArticles(for feedId: UUID? = nil, earliestDate: Date? = nil, stream: Bool = false) async throws {
+        let isSingleFeed = feedId != nil
+
+        if isSingleFeed {
+            // Refresh ciblé (ajout de flux) : prioritaire, interrompt le global si en cours
+            if isSingleFeedRefreshing { return }
+            isSingleFeedRefreshing = true
+            if isRefreshing {
+                // Interrompre le refresh global en cours
+                cancelGlobalRefresh = true
+                appLog("[FeedService] Interrupting global refresh for priority single-feed refresh")
+            }
+            refreshingFeedId = feedId
+            defer {
+                isSingleFeedRefreshing = false
+                refreshingFeedId = nil
+                #if os(macOS)
+                HapticFeedback.tap()
+                #endif
+            }
+        } else {
+            // Refresh global : ne lance pas si un refresh (global ou ciblé) est déjà en cours
+            if isRefreshing || isSingleFeedRefreshing { return }
+            cancelGlobalRefresh = false
+            isRefreshing = true
+            suppressBadgeUpdates = true
+            refreshingFeedId = nil
+            defer {
+                isRefreshing = false
+                suppressBadgeUpdates = false
+                refreshingFeedId = nil
+                cancelGlobalRefresh = false
+                updateAppBadge()
+                syncWidgetSnapshots()
+                #if os(macOS)
+                HapticFeedback.tap()
+                #endif
+            }
+        }
+
         let targets = feedId != nil ? self.feeds.filter { $0.id == feedId } : self.feeds
         logger.info("Refresh start — feeds to fetch: \(targets.count)")
         appLog("[FeedService] Refresh start — feeds: \(targets.count)")
         
-        // Compter les articles non lus AVANT le refresh pour calculer la différence
-        let unreadCountBefore = articles.filter { !$0.isRead }.count
+        // Compter les articles non lus AVANT le refresh pour calculer la différence (hors musique)
+        let musicFeedIdsBeforeRefresh = Set(
+            feeds
+                .filter { isMusicFeedURL($0.feedURL) || isMusicFeedURL($0.siteURL ?? $0.feedURL) }
+                .map(\.id)
+        )
+        let unreadCountBefore = articles.filter { !$0.isRead && !musicFeedIdsBeforeRefresh.contains($0.feedId) }.count
         
         #if canImport(FeedKit)
         var created: [Article] = []
         // Éviter les doublons par URL + permettre backfill d'images sur articles existants
         let existing = (try? modelContext.fetch(FetchDescriptor<Article>())) ?? []
-        let existingURLs: Set<String> = .init(existing.map { canonicalKey(for: $0.url, guid: nil) })
+        var existingURLs: Set<String> = .init(existing.map { canonicalKey(for: $0.url, guid: nil) })
+        // Ajouter aussi les clés musique feed-specific pour éviter les doublons entre playlists.
+        for art in existing {
+            if let songId = appleMusicSongId(from: art.url) {
+                existingURLs.insert("applemusic://\(art.feedId)/\(songId)")
+            }
+            if let trackId = spotifyTrackId(from: art.url) {
+                existingURLs.insert("spotify://\(art.feedId)/\(trackId)")
+            }
+        }
         // Map pour retrouver rapidement un article existant par URL canonique (sans GUID)
         var urlToArticle: [String: Article] = [:]
         // Construire une map tolérante aux doublons d'URL (garde la première avec image si possible)
@@ -1084,6 +2408,57 @@ final class FeedService {
         // Ensemble de clés déjà vues pendant ce rafraîchissement pour éviter toute insertion doublon
         var seenKeys: Set<String> = existingURLs
 
+        func urlKey(for url: URL) -> String {
+            canonicalKey(for: url, guid: nil)
+        }
+
+        func guidKey(for url: URL, guid: String?) -> String {
+            canonicalKey(for: url, guid: guid)
+        }
+
+        func rememberArticle(_ article: Article, url: URL, guid: String?, title: String, feedId: UUID) {
+            let normalizedURLKey = urlKey(for: url)
+            let normalizedGUIDKey = guidKey(for: url, guid: guid)
+
+            seenKeys.insert(normalizedURLKey)
+            urlToArticle[normalizedURLKey] = article
+
+            if normalizedGUIDKey != normalizedURLKey {
+                seenKeys.insert(normalizedGUIDKey)
+                urlToArticle[normalizedGUIDKey] = article
+            }
+
+            titleToArticleByFeed[feedId, default: [:]][Self.normalizeTitle(title)] = article
+        }
+
+        func existingArticle(for url: URL, guid: String?) -> Article? {
+            let normalizedURLKey = urlKey(for: url)
+            if let article = urlToArticle[normalizedURLKey] {
+                return article
+            }
+
+            let normalizedGUIDKey = guidKey(for: url, guid: guid)
+            if normalizedGUIDKey != normalizedURLKey {
+                return urlToArticle[normalizedGUIDKey]
+            }
+
+            return nil
+        }
+
+        func hasSeenArticle(url: URL, guid: String?) -> Bool {
+            let normalizedURLKey = urlKey(for: url)
+            if seenKeys.contains(normalizedURLKey) {
+                return true
+            }
+
+            let normalizedGUIDKey = guidKey(for: url, guid: guid)
+            if normalizedGUIDKey != normalizedURLKey {
+                return seenKeys.contains(normalizedGUIDKey)
+            }
+
+            return false
+        }
+
         func parseRSSFallbackAndCreateArticles(xml: String, feed: Feed) async -> Int {
             appLogDebug("[FeedService] RSS fallback XML length: \(xml.count)")
             var createdCount = 0
@@ -1096,13 +2471,13 @@ final class FeedService {
                 let url = it.link
                 let title = it.title.isEmpty ? url.absoluteString : it.title
                 let guid = url.absoluteString
-                let key = canonicalKey(for: url, guid: guid)
-                if seenKeys.contains(key) { continue }
+                if hasSeenArticle(url: url, guid: guid) { continue }
                 // Dédup par titre (même feed)
                 if let existingByTitle = titleToArticleByFeed[feed.id]?[Self.normalizeTitle(title)] {
                     if existingByTitle.imageURL == nil, let img = extractBestImageURL(fromHTML: it.description, baseURL: url) { existingByTitle.imageURL = httpsOnlyImageURL(img) }
                     if existingByTitle.summary == nil, let s = extractPlainText(from: it.description) { existingByTitle.summary = s }
                     if existingByTitle.contentHTML == nil, let h = it.description { existingByTitle.contentHTML = h }
+                    rememberArticle(existingByTitle, url: url, guid: guid, title: title, feedId: feed.id)
                     continue
                 }
                 var image: URL? = nil
@@ -1131,17 +2506,64 @@ final class FeedService {
                 modelContext.insert(article)
                 createQuota -= 1
                 if stream { self.articles.append(article) }
-                seenKeys.insert(key)
-                urlToArticle[key] = article
+                rememberArticle(article, url: url, guid: guid, title: title, feedId: feed.id)
                 created.append(article)
                 createdCount += 1
             }
             return createdCount
         }
         for feed in targets {
+            // Si un ajout de flux a demandé l'interruption du refresh global, on arrête
+            if !isSingleFeed && cancelGlobalRefresh {
+                appLog("[FeedService] Global refresh cancelled — priority single-feed refresh requested")
+                break
+            }
             logger.info("Fetching feed: \(feed.feedURL.absoluteString, privacy: .public)")
             appLog("[FeedService] Fetching: \(feed.feedURL.absoluteString)")
             do {
+            if isAppleMusicFeedURL(feed.feedURL) {
+                appLog("[FeedService] Apple Music feed detected: \(feed.feedURL.absoluteString)")
+                let scraped = await scrapeAppleMusicPage(from: feed.feedURL)
+                let appleMusicArticles = parseAppleMusicSongs(
+                    songs: scraped.songs,
+                    feed: feed,
+                    seenKeys: &seenKeys,
+                    titleToArticleByFeed: &titleToArticleByFeed,
+                    urlToArticle: &urlToArticle,
+                    stream: stream
+                )
+                created.append(contentsOf: appleMusicArticles)
+                appLog("[FeedService] Apple Music created: \(appleMusicArticles.count) items")
+                continue
+            }
+
+            if isSpotifyFeedURL(feed.feedURL) {
+                appLog("[FeedService] Spotify feed detected: \(feed.feedURL.absoluteString)")
+                let scraped = await scrapeSpotifyPage(from: feed.feedURL)
+                var spotifyArticles = parseSpotifySongs(
+                    songs: scraped.songs,
+                    feed: feed,
+                    seenKeys: &seenKeys,
+                    titleToArticleByFeed: &titleToArticleByFeed,
+                    urlToArticle: &urlToArticle,
+                    stream: stream
+                )
+                if !spotifyArticles.isEmpty {
+                    removeSpotifyFallbackArticles(for: feed)
+                } else {
+                    spotifyArticles = parseSpotifyFallbackArticle(
+                        feed: feed,
+                        seenKeys: &seenKeys,
+                        titleToArticleByFeed: &titleToArticleByFeed,
+                        urlToArticle: &urlToArticle,
+                        stream: stream
+                    )
+                }
+                created.append(contentsOf: spotifyArticles)
+                appLog("[FeedService] Spotify created: \(spotifyArticles.count) items")
+                continue
+            }
+
             let rawData = try await fetchFeedData(from: feed.feedURL)
             let data = sanitizeXMLDataForParsing(rawData)
             let xmlString = decodeXMLString(from: data)
@@ -1188,6 +2610,7 @@ final class FeedService {
                             if existingByTitle.imageURL == nil, let img = extractRSSImage(item) { existingByTitle.imageURL = httpsOnlyImageURL(img) }
                             if existingByTitle.summary == nil, let s = extractPlainText(from: item.description) { existingByTitle.summary = s }
                             if existingByTitle.contentHTML == nil, let h = item.content?.encoded { existingByTitle.contentHTML = h }
+                            rememberArticle(existingByTitle, url: url, guid: guidText, title: title, feedId: feed.id)
                             continue
                         }
                         
@@ -1197,21 +2620,21 @@ final class FeedService {
                         if image == nil { image = youtubeThumbnailURL(for: url) }
                         if image == nil { image = await fetchOgImage(from: url) }
                         image = httpsOnlyImageURL(image)
-                        let key = canonicalKey(for: url, guid: guidText)
                         // Préparer contenu nettoyé pour backfill et création
                         let rawHTML = item.content?.encoded ?? item.description
                         let cleanedText = extractPlainText(from: rawHTML)
                         let cleanedSummary = extractPlainText(from: item.description) ?? cleanedText
                         // Backfill si l'article existe déjà
-                        if let existing = urlToArticle[key] {
+                        if let existing = existingArticle(for: url, guid: guidText) {
                             if existing.imageURL == nil, let image { existing.imageURL = image }
                             if (existing.contentText == nil || existing.contentText?.isEmpty == true), let cleanedText { existing.contentText = cleanedText }
                             if existing.summary == nil || (existing.summary?.contains("<") == true) { existing.summary = cleanedSummary }
                             if existing.contentHTML == nil, let rawHTML { existing.contentHTML = rawHTML }
+                            rememberArticle(existing, url: url, guid: guidText, title: title, feedId: feed.id)
                             continue
                         }
                         // Ne pas créer si déjà vu pendant ce refresh
-                        if seenKeys.contains(key) { continue }
+                        if hasSeenArticle(url: url, guid: guidText) { continue }
 
                         let article = Article(
                             feedId: feed.id,
@@ -1231,19 +2654,20 @@ final class FeedService {
                         modelContext.insert(article)
                         createQuota -= 1
                         if stream { self.articles.append(article) }
-                        seenKeys.insert(key)
-                        urlToArticle[key] = article
+                        rememberArticle(article, url: url, guid: guidText, title: title, feedId: feed.id)
                         created.append(article)
                     }
                 case .atom(let atom):
                     let entries = atom.entries ?? []
+                    let fallbackPublishedAt = isLegacyAppleRSSURL(feed.feedURL) ? Date() : nil
                     logger.info("Parsed Atom entries: \(entries.count) for \(feed.feedURL.absoluteString, privacy: .public)")
                     appLog("[FeedService] Atom entries: \(entries.count)")
                     appLogDebug("[FeedService] Atom feed title: \(atom.title?.text ?? "nil")")
                     for entry in entries {
                         if createQuota <= 0 { break }
+                        let effectivePublishedAt = entry.published ?? entry.updated ?? fallbackPublishedAt
                         if let cutoff = earliestDate {
-                            let pub = (entry.published ?? entry.updated) ?? Date.distantPast
+                            let pub = effectivePublishedAt ?? Date.distantPast
                             if pub < cutoff { continue }
                         }
                         let linkString = entry.links?.first(where: { link in
@@ -1255,41 +2679,55 @@ final class FeedService {
                         let title = entry.title ?? entry.summary?.text ?? linkString
                         let rawDesc = entry.summary?.text
                         if isLikelyYouTubeShort(url: url, title: title, description: rawDesc) { continue }
+                        let preferredAppleArtwork = isLegacyAppleRSSURL(feed.feedURL) ? preferredAppleArtworkURL(from: entry, articleURL: url) : nil
                         // Dédup par titre pour variations d'URL
                         if let existingByTitle = titleToArticleByFeed[feed.id]?[Self.normalizeTitle(title)] {
-                            if existingByTitle.imageURL == nil, let img = extractAtomImage(entry) { existingByTitle.imageURL = httpsOnlyImageURL(img) }
+                            if let preferredAppleArtwork {
+                                existingByTitle.imageURL = preferredAppleArtwork
+                            } else if existingByTitle.imageURL == nil, let img = extractAtomImage(entry) {
+                                existingByTitle.imageURL = upscaledAppleArtworkURL(img)
+                            }
                             if existingByTitle.summary == nil || (existingByTitle.summary?.contains("<") == true), let s = extractPlainText(from: entry.summary?.text) { existingByTitle.summary = s }
                             if existingByTitle.contentHTML == nil, let h = entry.content?.text { existingByTitle.contentHTML = h }
+                            if existingByTitle.publishedAt == nil, let effectivePublishedAt { existingByTitle.publishedAt = effectivePublishedAt }
+                            rememberArticle(existingByTitle, url: url, guid: entry.id, title: title, feedId: feed.id)
                             continue
                         }
                         
                         var image: URL? = nil
-                        if image == nil { image = extractAtomImage(entry) }
+                        if image == nil { image = preferredAppleArtwork }
+                        if image == nil { image = upscaledAppleArtworkURL(extractAtomImage(entry)) }
+                        if image == nil { image = upscaledAppleArtworkURL(extractImageURL(fromHTML: entry.content?.text ?? entry.summary?.text, baseURL: url)) }
                         if image == nil { image = extractBestImageURL(fromHTML: entry.content?.text ?? entry.summary?.text, baseURL: url) }
                         if image == nil { image = youtubeThumbnailURL(for: url) }
                         if image == nil { image = await fetchOgImage(from: url) }
-                        image = httpsOnlyImageURL(image)
+                        image = upscaledAppleArtworkURL(image)
                         let guid = entry.id?.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let key = canonicalKey(for: url, guid: guid)
                         // Préparer contenu nettoyé pour backfill et création
                         let rawHTML = entry.content?.text ?? entry.summary?.text
                         let cleanedText = extractPlainText(from: rawHTML)
                         let cleanedSummary = extractPlainText(from: entry.summary?.text) ?? cleanedText
-                        if let existing = urlToArticle[key] {
-                            if existing.imageURL == nil, let image { existing.imageURL = image }
+                        if let existing = existingArticle(for: url, guid: guid) {
+                            if let preferredAppleArtwork {
+                                existing.imageURL = preferredAppleArtwork
+                            } else if existing.imageURL == nil, let image {
+                                existing.imageURL = image
+                            }
                             if (existing.contentText == nil || existing.contentText?.isEmpty == true), let cleanedText { existing.contentText = cleanedText }
                             if existing.summary == nil || (existing.summary?.contains("<") == true) { existing.summary = cleanedSummary }
                             if existing.contentHTML == nil, let rawHTML { existing.contentHTML = rawHTML }
+                            if existing.publishedAt == nil, let effectivePublishedAt { existing.publishedAt = effectivePublishedAt }
+                            rememberArticle(existing, url: url, guid: guid, title: title, feedId: feed.id)
                             continue
                         }
-                        if seenKeys.contains(key) { continue }
+                        if hasSeenArticle(url: url, guid: guid) { continue }
 
                         let article = Article(
                             feedId: feed.id,
                             title: title,
                             url: url,
                             author: entry.authors?.first?.name,
-                            publishedAt: entry.published ?? entry.updated,
+                            publishedAt: effectivePublishedAt,
                             contentHTML: rawHTML,
                             contentText: cleanedText,
                             imageURL: image,
@@ -1302,8 +2740,7 @@ final class FeedService {
                         modelContext.insert(article)
                         createQuota -= 1
                         if stream { self.articles.append(article) }
-                        seenKeys.insert(key)
-                        urlToArticle[key] = article
+                        rememberArticle(article, url: url, guid: guid, title: title, feedId: feed.id)
                         created.append(article)
                     }
                 case .json(let json):
@@ -1326,6 +2763,7 @@ final class FeedService {
                             if existingByTitle.imageURL == nil, let imageURL = (item.image ?? item.bannerImage).flatMap({ URL(string: $0) }) { existingByTitle.imageURL = httpsOnlyImageURL(imageURL) }
                             if existingByTitle.summary == nil, let s = extractPlainText(from: item.summary) { existingByTitle.summary = s }
                             if existingByTitle.contentHTML == nil, let h = item.contentHtml { existingByTitle.contentHTML = h }
+                            rememberArticle(existingByTitle, url: url, guid: item.id, title: title, feedId: feed.id)
                             continue
                         }
                         
@@ -1334,19 +2772,19 @@ final class FeedService {
                         if image == nil { image = youtubeThumbnailURL(for: url) }
                         if image == nil { image = await fetchOgImage(from: url) }
                         image = httpsOnlyImageURL(image)
-                        let key = canonicalKey(for: url, guid: item.id)
                         // Préparer contenu nettoyé pour backfill et création
                         let rawHTML = item.contentHtml
                         let cleanedText = extractPlainText(from: rawHTML) ?? item.contentText
                         let cleanedSummary = extractPlainText(from: item.summary) ?? cleanedText
-                        if let existing = urlToArticle[key] {
+                        if let existing = existingArticle(for: url, guid: item.id) {
                             if existing.imageURL == nil, let image { existing.imageURL = image }
                             if (existing.contentText == nil || existing.contentText?.isEmpty == true), let cleanedText { existing.contentText = cleanedText }
                             if existing.summary == nil || (existing.summary?.contains("<") == true) { existing.summary = cleanedSummary }
                             if existing.contentHTML == nil, let rawHTML { existing.contentHTML = rawHTML }
+                            rememberArticle(existing, url: url, guid: item.id, title: title, feedId: feed.id)
                             continue
                         }
-                        if seenKeys.contains(key) { continue }
+                        if hasSeenArticle(url: url, guid: item.id) { continue }
 
                         let article = Article(
                             feedId: feed.id,
@@ -1366,8 +2804,7 @@ final class FeedService {
                         modelContext.insert(article)
                         createQuota -= 1
                         if stream { self.articles.append(article) }
-                        seenKeys.insert(key)
-                        urlToArticle[key] = article
+                        rememberArticle(article, url: url, guid: item.id, title: title, feedId: feed.id)
                         created.append(article)
                     }
                 }
@@ -1395,6 +2832,8 @@ final class FeedService {
         // Nettoyage de sécurité: recharger puis supprimer les doublons stricts d'URL
         loadFeeds() // S'assurer que feeds est à jour
         loadArticles()
+        let refreshedFeedIds = Set(targets.map { $0.id })
+        await pruneUnavailableYouTubeArticles(for: refreshedFeedIds)
         removeDuplicateArticles()
         // Politique de rétention: supprimer >365 jours et limiter à 35 par flux
         enforceArticleRetentionPolicy(maxPerFeed: 35, maxAgeDays: 365)
@@ -1410,9 +2849,19 @@ final class FeedService {
         #endif
         // Enregistrer l'heure de dernière actualisation (utile pour le mur de flux)
         lastRefreshAt = Date()
+        #if canImport(FeedKit)
+        if created.isEmpty == false {
+            discoveryRefreshTrigger += 1
+        }
+        #endif
         
-        // Notifier nouveaux articles non lus : calculer la différence entre avant et après
-        let unreadCountAfter = articles.filter { !$0.isRead }.count
+        // Notifier nouveaux articles non lus : calculer la différence entre avant et après (hors musique)
+        let musicFeedIdsForNotif = Set(
+            feeds
+                .filter { isMusicFeedURL($0.feedURL) || isMusicFeedURL($0.siteURL ?? $0.feedURL) }
+                .map(\.id)
+        )
+        let unreadCountAfter = articles.filter { !$0.isRead && !musicFeedIdsForNotif.contains($0.feedId) }.count
         let newUnread = max(0, unreadCountAfter - unreadCountBefore)
         
         if newUnread > 0 {
@@ -1520,21 +2969,80 @@ final class FeedService {
         #if canImport(Foundation)
         for t in newsletterTimers { t.invalidate() }
         newsletterTimers.removeAll()
-        let cal = Calendar.current
-        let now = Date()
-        for dc in newsletterScheduleTimes {
-            var next = cal.date(bySettingHour: dc.hour ?? 9, minute: dc.minute ?? 0, second: 0, of: now) ?? now
-            if next <= now { next = cal.date(byAdding: .day, value: 1, to: next) ?? now }
-            let interval = max(1, next.timeIntervalSinceNow)
-            let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
-                guard let self else { return }
-                Task { await self.generateNewsletter() }
-                // Reschedule this slot for tomorrow
-                DispatchQueue.main.async { self.scheduleNewsletterTimers() }
+        // Reset des créneaux déjà déclenchés si on change de jour
+        let todayKey = Self.newsletterDayKey(for: Date())
+        let savedDay = UserDefaults.standard.string(forKey: "newsletter.lastFiredDay") ?? ""
+        if savedDay != todayKey {
+            newsletterLastFiredSlots.removeAll()
+            UserDefaults.standard.set(todayKey, forKey: "newsletter.lastFiredDay")
+            UserDefaults.standard.removeObject(forKey: "newsletter.firedSlots")
+        } else {
+            // Restaurer les créneaux déjà déclenchés aujourd'hui
+            if let saved = UserDefaults.standard.array(forKey: "newsletter.firedSlots") as? [String] {
+                newsletterLastFiredSlots = Set(saved)
             }
-            newsletterTimers.append(timer)
+        }
+        // Timer périodique qui vérifie toutes les 60 secondes si un créneau doit être déclenché
+        let timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                self.checkAndFireNewsletterSlots()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        newsletterTimers.append(timer)
+        // Vérifier immédiatement au cas où un créneau a été manqué (réveil, lancement tardif)
+        checkAndFireNewsletterSlots()
+        // Observer le réveil du Mac pour rattraper les créneaux manqués
+        #if canImport(AppKit)
+        NotificationCenter.default.removeObserver(self, name: NSWorkspace.didWakeNotification, object: nil)
+        NotificationCenter.default.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                self.checkAndFireNewsletterSlots()
+            }
         }
         #endif
+        #endif
+    }
+
+    private func checkAndFireNewsletterSlots() {
+        let cal = Calendar.current
+        let now = Date()
+        let todayKey = Self.newsletterDayKey(for: now)
+        // Nouveau jour : reset des créneaux déclenchés
+        let savedDay = UserDefaults.standard.string(forKey: "newsletter.lastFiredDay") ?? ""
+        if savedDay != todayKey {
+            newsletterLastFiredSlots.removeAll()
+            UserDefaults.standard.set(todayKey, forKey: "newsletter.lastFiredDay")
+            UserDefaults.standard.removeObject(forKey: "newsletter.firedSlots")
+        }
+        for dc in newsletterScheduleTimes {
+            let h = dc.hour ?? 9
+            let m = dc.minute ?? 0
+            let slotKey = "\(h):\(m)"
+            // Déjà déclenché aujourd'hui ?
+            guard !newsletterLastFiredSlots.contains(slotKey) else { continue }
+            // Construire la date du créneau aujourd'hui
+            guard let slotDate = cal.date(bySettingHour: h, minute: m, second: 0, of: now) else { continue }
+            // Le créneau est passé (avec tolérance de 5 min max de retard accepté pour rattrapage)
+            let elapsed = now.timeIntervalSince(slotDate)
+            if elapsed >= 0 && elapsed < 5 * 60 * 60 {
+                // Déclencher la génération
+                newsletterLastFiredSlots.insert(slotKey)
+                // Persister les créneaux déclenchés
+                UserDefaults.standard.set(Array(newsletterLastFiredSlots), forKey: "newsletter.firedSlots")
+                Task { await self.generateNewsletter() }
+                // Un seul créneau à la fois
+                break
+            }
+        }
+    }
+
+    private static func newsletterDayKey(for date: Date) -> String {
+        let cal = Calendar.current
+        let comps = cal.dateComponents([.year, .month, .day], from: date)
+        return "\(comps.year ?? 0)-\(comps.month ?? 0)-\(comps.day ?? 0)"
     }
 
     // Quota IA supprimé: plus de suivi ni de limitation
@@ -1622,7 +3130,12 @@ final class FeedService {
 
         // 3) Déduplication par URL canonique, choisir le meilleur candidat à garder
         let remaining = articles.filter { validFeedIds.contains($0.feedId) }
-        let groups = Dictionary(grouping: remaining) { canonicalKey(for: $0.url, guid: nil) }
+        let groups = Dictionary(grouping: remaining) { article in
+            let key = canonicalKey(for: article.url, guid: nil)
+            let feed = feeds.first(where: { $0.id == article.feedId })
+            let isMusic = feed.map { isMusicFeedURL($0.feedURL) || isMusicFeedURL($0.siteURL ?? $0.feedURL) } ?? false
+            return isMusic ? "\(article.feedId.uuidString)::\(key)" : key
+        }
 
         func isBetter(_ lhs: Article, than rhs: Article) -> Bool {
             // Meilleur si image présente
@@ -1639,7 +3152,11 @@ final class FeedService {
 
         // 4) Deuxième passe: déduplication par similarité de titre dans un même feed (ex: variantes AMP)
         let byFeed: [UUID: [Article]] = Dictionary(grouping: articles.filter { validFeedIds.contains($0.feedId) }) { $0.feedId }
-        for (_, items) in byFeed {
+        for (feedId, items) in byFeed {
+            if let feed = feeds.first(where: { $0.id == feedId }),
+               isMusicFeedURL(feed.feedURL) || isMusicFeedURL(feed.siteURL ?? feed.feedURL) {
+                continue
+            }
             // Hash par titre normalisé (lowercased, collapse spaces)
             var map: [String: [Article]] = [:]
             for a in items {
@@ -1687,6 +3204,10 @@ final class FeedService {
 
         // 1) Supprimer ceux plus vieux que cutoff
         for a in articles {
+            if let feed = feeds.first(where: { $0.id == a.feedId }),
+               isMusicFeedURL(feed.feedURL) || isMusicFeedURL(feed.siteURL ?? feed.feedURL) {
+                continue
+            }
             let pub = a.publishedAt ?? Date.distantPast
             if pub < cutoff {
                 toDelete.insert(a)
@@ -1695,7 +3216,11 @@ final class FeedService {
 
         // 2) Pour chaque flux, garder seulement les plus récents (maxPerFeed)
         let byFeed: [UUID: [Article]] = Dictionary(grouping: articles) { $0.feedId }
-        for (_, items) in byFeed {
+        for (feedId, items) in byFeed {
+            if let feed = feeds.first(where: { $0.id == feedId }),
+               isMusicFeedURL(feed.feedURL) || isMusicFeedURL(feed.siteURL ?? feed.feedURL) {
+                continue
+            }
             // Trier par date décroissante (fallback distantPast)
             let sorted = items.sorted { ($0.publishedAt ?? .distantPast) > ($1.publishedAt ?? .distantPast) }
             if sorted.count > maxPerFeed {
@@ -1714,15 +3239,24 @@ final class FeedService {
     // MARK: - App badge (macOS)
     private func updateAppBadge() {
         #if canImport(AppKit)
-        let unread = articles.reduce(0) { $0 + ($1.isRead ? 0 : 1) }
-        NSApplication.shared.dockTile.badgeLabel = unread > 0 ? String(unread) : ""
+        let enabled = UserDefaults.standard.object(forKey: "badgeReadLaterEnabled") == nil ? true : UserDefaults.standard.bool(forKey: "badgeReadLaterEnabled")
+        if enabled {
+            let saved = articles.filter { $0.isSaved }.count
+            NSApplication.shared.dockTile.badgeLabel = saved > 0 ? String(saved) : ""
+        } else {
+            NSApplication.shared.dockTile.badgeLabel = ""
+        }
         #endif
+    }
+
+    func refreshAppBadge() {
+        updateAppBadge()
     }
 
     // MARK: - Auto refresh
     private func scheduleAutoRefresh() {
         refreshTimer?.invalidate()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 15 * 60, repeats: true) { [weak self] _ in
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 30 * 60, repeats: true) { [weak self] _ in
             guard let self else { return }
             Task { [weak self] in
                 guard let self else { return }
@@ -1924,8 +3458,13 @@ final class FeedService {
         let startOfToday = cal.startOfDay(for: Date())
         let endOfToday = cal.date(byAdding: .day, value: 1, to: startOfToday) ?? Date()
         // Ne garder que les articles du jour (minuit → minuit+1j)
+        let musicIds = Set(
+            feeds
+                .filter { isMusicFeedURL($0.feedURL) || isMusicFeedURL($0.siteURL ?? $0.feedURL) }
+                .map(\.id)
+        )
         let wall = articles
-            .filter { let d = $0.publishedAt ?? .distantPast; return d >= startOfToday && d < endOfToday }
+            .filter { let d = $0.publishedAt ?? .distantPast; return d >= startOfToday && d < endOfToday && !musicIds.contains($0.feedId) }
             .sorted { ($0.publishedAt ?? .distantPast) > ($1.publishedAt ?? .distantPast) }
         let deduped = deduplicateArticles(wall)
         guard !deduped.isEmpty else {
@@ -1994,7 +3533,7 @@ final class FeedService {
         }
 
         #if canImport(FoundationModels)
-        if #available(macOS 26.0, *) {
+        if #available(macOS 26.0, iOS 26.0, *) {
             let model = SystemLanguageModel.default
             switch model.availability {
             case .available:
@@ -2066,7 +3605,7 @@ final class FeedService {
                 return
             }
         } else {
-            aiErrorMessage = "L'intelligence artificielle locale nécessite macOS 26."
+            aiErrorMessage = "L'intelligence artificielle locale nécessite iOS/macOS 26."
             return
         }
         #else
@@ -2089,6 +3628,85 @@ final class FeedService {
     private func isYouTubeURL(_ url: URL) -> Bool {
         guard let host = url.host?.lowercased() else { return false }
         return host.contains("youtube.com") || host.contains("youtu.be")
+    }
+
+    private func extractYouTubeVideoId(from url: URL) -> String? {
+        let host = (url.host ?? "").lowercased()
+        if host.contains("youtube.com") {
+            if let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+               let videoId = items.first(where: { $0.name.lowercased() == "v" })?.value,
+               !videoId.isEmpty {
+                return videoId
+            }
+            let parts = url.pathComponents.filter { $0 != "/" }
+            if let idx = parts.firstIndex(where: { $0 == "shorts" || $0 == "embed" || $0 == "live" }),
+               idx + 1 < parts.count {
+                let value = parts[idx + 1].trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                return value.isEmpty ? nil : value
+            }
+        }
+        if host.contains("youtu.be") {
+            let value = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            return value.isEmpty ? nil : value
+        }
+        return nil
+    }
+
+    private func isYouTubeVideoUnavailable(_ url: URL) async -> Bool {
+        guard let videoId = extractYouTubeVideoId(from: url), !videoId.isEmpty else { return false }
+        guard var comps = URLComponents(string: "https://www.youtube.com/oembed") else { return false }
+        comps.queryItems = [
+            URLQueryItem(name: "url", value: "https://www.youtube.com/watch?v=\(videoId)"),
+            URLQueryItem(name: "format", value: "json")
+        ]
+        guard let oembedURL = comps.url else { return false }
+        var req = URLRequest(url: oembedURL)
+        req.timeoutInterval = 10
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+        do {
+            let (_, response) = try await URLSession.shared.data(for: req)
+            guard let http = response as? HTTPURLResponse else { return false }
+            if (200...299).contains(http.statusCode) { return false }
+            // Si YouTube ne renvoie pas 2xx (404/410/etc.), on considère la vidéo comme indisponible.
+            return true
+        } catch {
+            // En cas d'erreur réseau locale, on ne supprime pas.
+            return false
+        }
+    }
+
+    private func pruneUnavailableYouTubeArticles(for feedIds: Set<UUID>) async {
+        guard feedIds.isEmpty == false else { return }
+        let candidates = articles.filter { feedIds.contains($0.feedId) && isYouTubeURL($0.url) }
+        guard candidates.isEmpty == false else { return }
+
+        var availabilityCache: [String: Bool] = [:]
+        var removedCount = 0
+        for article in candidates {
+            let key = canonicalKey(for: article.url, guid: nil)
+            let unavailable: Bool
+            if let cached = availabilityCache[key] {
+                unavailable = cached
+            } else {
+                let value = await isYouTubeVideoUnavailable(article.url)
+                availabilityCache[key] = value
+                unavailable = value
+            }
+            if unavailable {
+                modelContext.delete(article)
+                removedCount += 1
+            }
+        }
+        guard removedCount > 0 else { return }
+        do {
+            try modelContext.save()
+            loadArticles()
+            appLog("[FeedService] Removed unavailable YouTube articles: \(removedCount)")
+            logger.info("Removed unavailable YouTube articles: \(removedCount)")
+        } catch {
+            logger.error("Failed to delete unavailable YouTube articles: \(String(describing: error), privacy: .public)")
+        }
     }
 
     // Envoi newsletter supprimé
@@ -2827,20 +4445,40 @@ final class FeedService {
             let normalized = text.replacingOccurrences(of: "\r", with: "")
                 .replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression, range: nil)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            return normalized.isEmpty ? nil : normalized
+            let cleaned = cleanMarkdownArtifacts(in: normalized)
+            return cleaned.isEmpty ? nil : cleaned
         } catch {
             // Fallback: retire les tags via regex simple
             let stripped = html.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
             let collapsed = stripped.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression, range: nil)
-            let cleaned = htmlUnescape(collapsed).trimmingCharacters(in: .whitespacesAndNewlines)
+            let unescaped = htmlUnescape(collapsed).trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleaned = cleanMarkdownArtifacts(in: unescaped)
             return cleaned.isEmpty ? nil : cleaned
         }
         #else
         let stripped = html.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
         let collapsed = stripped.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression, range: nil)
-        let cleaned = htmlUnescape(collapsed).trimmingCharacters(in: .whitespacesAndNewlines)
+        let unescaped = htmlUnescape(collapsed).trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleaned = cleanMarkdownArtifacts(in: unescaped)
         return cleaned.isEmpty ? nil : cleaned
         #endif
+    }
+
+    // Supprime les marqueurs markdown parasites dans les résumés/textes (ex: **, *, etc.)
+    private func cleanMarkdownArtifacts(in text: String) -> String {
+        guard !text.isEmpty else { return text }
+        var result = text
+        result = result.replacingOccurrences(of: "**", with: "")
+        result = result.replacingOccurrences(of: "__", with: "")
+        // Supprime les * de mise en emphase au milieu des phrases
+        result = result.replacingOccurrences(of: #"(?<=\S)\*(?=\S)"#, with: "", options: .regularExpression)
+        // Convertit les puces markdown en puces lisibles
+        result = result.replacingOccurrences(of: #"(?m)^\s*[\*\-]\s+"#, with: "• ", options: .regularExpression)
+        // Nettoie les étoiles restantes isolées
+        result = result.replacingOccurrences(of: #"\s*\*\s*"#, with: " ", options: .regularExpression)
+        result = result.replacingOccurrences(of: "\\s{2,}", with: " ", options: .regularExpression)
+        result = result.replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression)
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // Extraction avancée: JSON-LD + plus grande entrée de srcset
@@ -3044,6 +4682,26 @@ final class FeedService {
         return nil
     }
 
+    // Marque tous les articles comme lus (utilisé par le bouton global du mur de flux)
+    func markAllFeedsVisited() async {
+        var changed = false
+        for article in articles where article.isRead == false {
+            article.isRead = true
+            changed = true
+        }
+        if changed {
+            do {
+                try modelContext.save()
+                // Force une mise à jour observable des badges
+                badgeUpdateTrigger += 1
+                updateAppBadge()
+                logger.info("Mark all feeds visited → all articles read")
+            } catch {
+                logger.error("Failed to mark all feeds visited: \(String(describing: error), privacy: .public)")
+            }
+        }
+    }
+
     // Marque tous les articles d'un flux comme lus (utilisé pour reset du badge à la visite)
     func markFeedVisited(feedId: UUID) async {
         var changed = false
@@ -3126,6 +4784,7 @@ final class FeedService {
         do {
             try modelContext.save()
             loadArticles()
+            updateAppBadge()
             #if os(macOS)
             HapticFeedback.tap()
             #endif
@@ -3158,6 +4817,98 @@ final class FeedService {
     /// Retourne le nombre d'articles à lire plus tard
     var favoriteArticlesCount: Int {
         return articles.filter { $0.isSaved }.count
+    }
+
+    var readerNotesCount: Int {
+        readerNotes.count
+    }
+
+    @discardableResult
+    func addReaderNote(
+        selectedText rawText: String,
+        articleTitle: String,
+        articleURL: URL,
+        articleImageURL: URL? = nil,
+        articleSource: String? = nil,
+        articlePublishedAt: Date? = nil,
+        articleId: UUID? = nil,
+        feedId: UUID? = nil
+    ) -> Bool {
+        let cleanedText = normalizeReaderNoteText(rawText)
+        let cleanedTitle = articleTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanedText.isEmpty, !cleanedTitle.isEmpty else { return false }
+
+        let articleKey = canonicalReaderNoteArticleKey(for: articleURL)
+        let normalizedTextKey = normalizeReaderNoteLookupKey(cleanedText)
+        if readerNotes.contains(where: {
+            canonicalReaderNoteArticleKey(for: $0.articleURL) == articleKey
+            && normalizeReaderNoteLookupKey($0.selectedText) == normalizedTextKey
+        }) {
+            #if os(macOS)
+            HapticFeedback.alignment()
+            #endif
+            return false
+        }
+
+        let note = ReaderNote(
+            articleId: articleId,
+            feedId: feedId,
+            articleTitle: cleanedTitle,
+            articleURL: articleURL,
+            articleImageURL: articleImageURL,
+            articleSource: articleSource,
+            articlePublishedAt: articlePublishedAt,
+            selectedText: cleanedText
+        )
+        modelContext.insert(note)
+
+        do {
+            try modelContext.save()
+            loadReaderNotes()
+            #if os(macOS)
+            HapticFeedback.success()
+            #endif
+            logger.info("Reader note saved for article: \(cleanedTitle, privacy: .public)")
+            return true
+        } catch {
+            logger.error("Failed to save reader note: \(String(describing: error), privacy: .public)")
+            return false
+        }
+    }
+
+    func deleteReaderNote(_ note: ReaderNote) {
+        do {
+            modelContext.delete(note)
+            try modelContext.save()
+            loadReaderNotes()
+            #if os(macOS)
+            HapticFeedback.tap()
+            #endif
+            logger.info("Reader note deleted: \(note.articleTitle, privacy: .public)")
+        } catch {
+            logger.error("Failed to delete reader note: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func normalizeReaderNoteText(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "\r", with: "\n")
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func normalizeReaderNoteLookupKey(_ text: String) -> String {
+        normalizeReaderNoteText(text)
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+    }
+
+    private func canonicalReaderNoteArticleKey(for url: URL) -> String {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.fragment = nil
+        components?.query = nil
+        return components?.url?.absoluteString ?? url.absoluteString
     }
 
     private func discoverFaviconURL(for feed: Feed) async -> URL? {
@@ -3254,7 +5005,8 @@ final class FeedService {
                     aiProviderConfig: settings.aiProviderConfig,
                     imageScrapingEnabled: settings.imageScrapingEnabled,
                     windowBlurEnabled: settings.windowBlurEnabled,
-                    hideTitleOnThumbnails: settings.hideTitleOnThumbnails
+                    hideTitleOnThumbnails: settings.hideTitleOnThumbnails,
+                    filterAdsEnabled: settings.filterAdsEnabled
                 )
                 logger.info("Loaded settings for export")
             } else {
@@ -3323,7 +5075,7 @@ final class FeedService {
         }
         
         // Vérifier la version de compatibilité
-        guard configuration.version == "1.0" else {
+        guard configuration.version == "1.0" || configuration.version == "1.1" else {
             throw FeedError.importVersionIncompatible
         }
         
@@ -3389,6 +5141,11 @@ final class FeedService {
                 existingSettings.preferredLangs = settingsData.preferredLangs
                 existingSettings.aiProviderConfig = settingsData.aiProviderConfig
                 existingSettings.imageScrapingEnabled = settingsData.imageScrapingEnabled
+                existingSettings.windowBlurEnabled = settingsData.windowBlurEnabled
+                existingSettings.hideTitleOnThumbnails = settingsData.hideTitleOnThumbnails
+                if let filterAds = settingsData.filterAdsEnabled {
+                    existingSettings.filterAdsEnabled = filterAds
+                }
             } else {
                 // Créer de nouveaux paramètres
                 let newSettings = Settings(
@@ -3398,7 +5155,10 @@ final class FeedService {
                     ttsRate: settingsData.ttsRate,
                     preferredLangs: settingsData.preferredLangs,
                     aiProviderConfig: settingsData.aiProviderConfig,
-                    imageScrapingEnabled: settingsData.imageScrapingEnabled
+                    imageScrapingEnabled: settingsData.imageScrapingEnabled,
+                    windowBlurEnabled: settingsData.windowBlurEnabled,
+                    hideTitleOnThumbnails: settingsData.hideTitleOnThumbnails,
+                    filterAdsEnabled: settingsData.filterAdsEnabled ?? false
                 )
                 modelContext.insert(newSettings)
             }
@@ -3460,6 +5220,13 @@ final class FeedService {
             modelContext.delete(suggestion)
         }
         logger.info("Deleted \(suggestionsToDelete.count) suggestions")
+
+        // Supprimer toutes les notes lecteur
+        let notesToDelete = try modelContext.fetch(FetchDescriptor<ReaderNote>())
+        for note in notesToDelete {
+            modelContext.delete(note)
+        }
+        logger.info("Deleted \(notesToDelete.count) reader notes")
         
         // Supprimer les paramètres
         let settingsToDelete = try modelContext.fetch(FetchDescriptor<Settings>())
@@ -3488,6 +5255,7 @@ final class FeedService {
         loadFeeds()
         loadFolders()
         loadArticles()
+        loadReaderNotes()
         
         appLog("[FeedService] All content deleted successfully - feeds: \(feeds.count), folders: \(folders.count), articles: \(articles.count)")
         logger.info("All content deleted successfully")
@@ -3498,7 +5266,7 @@ final class FeedService {
         req.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
         req.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
         req.setValue("en-US,en;q=0.8", forHTTPHeaderField: "Accept-Language")
-        req.setValue("CONSENT=YES+1", forHTTPHeaderField: "Cookie")
+        req.setValue(Self.youTubeConsentCookie, forHTTPHeaderField: "Cookie")
         req.timeoutInterval = 12
         do {
             let (_, response) = try await URLSession.shared.data(for: req)
@@ -3522,7 +5290,7 @@ final class FeedService {
             req.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
             req.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
             req.setValue("en-US,en;q=0.8", forHTTPHeaderField: "Accept-Language")
-            req.setValue("CONSENT=YES+1", forHTTPHeaderField: "Cookie")
+            req.setValue(Self.youTubeConsentCookie, forHTTPHeaderField: "Cookie")
             req.timeoutInterval = 12
             do {
                 let (data, _) = try await URLSession.shared.data(for: req)

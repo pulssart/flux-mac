@@ -71,6 +71,45 @@ final class Article: Identifiable {
 }
 
 @Model
+final class ReaderNote: Identifiable {
+    @Attribute(.unique)
+    var id: UUID
+    var articleId: UUID?
+    var feedId: UUID?
+    var articleTitle: String
+    var articleURL: URL
+    var articleImageURL: URL?
+    var articleSource: String?
+    var articlePublishedAt: Date?
+    var selectedText: String
+    var createdAt: Date
+
+    init(
+        id: UUID = UUID(),
+        articleId: UUID? = nil,
+        feedId: UUID? = nil,
+        articleTitle: String,
+        articleURL: URL,
+        articleImageURL: URL? = nil,
+        articleSource: String? = nil,
+        articlePublishedAt: Date? = nil,
+        selectedText: String,
+        createdAt: Date = .now
+    ) {
+        self.id = id
+        self.articleId = articleId
+        self.feedId = feedId
+        self.articleTitle = articleTitle
+        self.articleURL = articleURL
+        self.articleImageURL = articleImageURL
+        self.articleSource = articleSource
+        self.articlePublishedAt = articlePublishedAt
+        self.selectedText = selectedText
+        self.createdAt = createdAt
+    }
+}
+
+@Model
 final class Suggestion: Identifiable {
     @Attribute(.unique)
     var id: UUID
@@ -102,8 +141,9 @@ final class Settings: Identifiable {
     var imageScrapingEnabled: Bool
     var windowBlurEnabled: Bool?
     var hideTitleOnThumbnails: Bool?
+    var filterAdsEnabled: Bool?
 
-    init(id: UUID = UUID(), theme: String = "system", ttsVoice: String? = nil, ttsRate: Double = 1.0, preferredLangs: [String] = ["fr", "en"], aiProviderConfig: Data? = nil, imageScrapingEnabled: Bool = true, windowBlurEnabled: Bool? = nil, hideTitleOnThumbnails: Bool? = nil) {
+    init(id: UUID = UUID(), theme: String = "system", ttsVoice: String? = nil, ttsRate: Double = 1.0, preferredLangs: [String] = ["fr", "en"], aiProviderConfig: Data? = nil, imageScrapingEnabled: Bool = true, windowBlurEnabled: Bool? = nil, hideTitleOnThumbnails: Bool? = nil, filterAdsEnabled: Bool? = false) {
         self.id = id
         self.theme = theme
         self.ttsVoice = ttsVoice
@@ -113,6 +153,7 @@ final class Settings: Identifiable {
         self.imageScrapingEnabled = imageScrapingEnabled
         self.windowBlurEnabled = windowBlurEnabled
         self.hideTitleOnThumbnails = hideTitleOnThumbnails
+        self.filterAdsEnabled = filterAdsEnabled
     }
 }
 
@@ -176,6 +217,7 @@ struct SettingsExportData: Codable {
     let imageScrapingEnabled: Bool
     let windowBlurEnabled: Bool?
     let hideTitleOnThumbnails: Bool?
+    let filterAdsEnabled: Bool?
 }
 
 /// Résumé d'un import de configuration

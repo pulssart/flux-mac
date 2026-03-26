@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Flux RSS Detector</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="hero">
+        <div>
+          <p id="eyebrow-label" class="eyebrow">Flux</p>
+          <h1>Find RSS</h1>
+        </div>
+        <button id="rescan-button" class="ghost-button" type="button">Scan</button>
+      </header>
+
+      <section id="page-card" class="card hidden">
+        <p class="card-label">Current page</p>
+        <h2 id="page-title" class="page-title">-</h2>
+        <p id="page-url" class="page-url">-</p>
+      </section>
+
+      <section id="loading-card" class="card state-card">
+        <div class="spinner" aria-hidden="true"></div>
+        <div>
+          <p class="state-title">Scanning</p>
+          <p id="loading-copy" class="state-copy">Starting...</p>
+        </div>
+      </section>
+
+      <section id="error-card" class="card hidden">
+        <p class="state-title">Can't scan this page</p>
+        <p id="error-copy" class="state-copy"></p>
+      </section>
+
+      <section id="results-section" class="hidden">
+        <div class="section-heading">
+          <div>
+            <p class="card-label">Results</p>
+            <h2 id="results-title">Feeds</h2>
+          </div>
+          <p id="results-meta" class="muted"></p>
+        </div>
+        <div id="results-list" class="results-list"></div>
+      </section>
+
+      <section id="empty-card" class="card hidden">
+        <p class="state-title">No feed found</p>
+        <p id="empty-copy" class="state-copy"></p>
+      </section>
+
+      <section id="notice-card" class="card subtle-card hidden">
+        <p class="card-label">Note</p>
+        <p id="notice-copy" class="state-copy"></p>
+      </section>
+
+      <footer class="footer-note">
+        <p>
+          Requires Flux on this Mac.
+        </p>
+      </footer>
+    </main>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

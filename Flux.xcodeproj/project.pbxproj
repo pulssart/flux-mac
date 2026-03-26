@@ -12,19 +12,22 @@
 		4AD08AE02F22CFC8004400BA /* RSSFeedSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AD08ADF2F22CFC8004400BA /* RSSFeedSuggestions.swift */; };
 		4AEC48D82F23503100369D3A /* GlowEffect.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AEC48D72F23503100369D3A /* GlowEffect.swift */; };
 		4AEC48DC2F24FFA700369D3A /* blur.metal in Sources */ = {isa = PBXBuildFile; fileRef = 4AEC48DB2F24FFA700369D3A /* blur.metal */; };
+		4AF8AF592F69A1E800AA20D4 /* NotesWidgetSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AF8AF582F69A1E800AA20D4 /* NotesWidgetSync.swift */; };
+		574B1E458DD72477A93D9176 /* DiscoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 313BDBFE44EEE37CED46896D /* DiscoveryView.swift */; };
+		57WIDA0022F9B2000004A5B1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 57WIDA0012F9B2000004A5B1 /* Assets.xcassets */; };
+		57WIDB0012F9B2000004A5B1 /* FluxWidgetsExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57WIDF0022F9B2000004A5B1 /* FluxWidgetsExtension.swift */; };
+		57WIDB0022F9B2000004A5B1 /* FluxWidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 57WIDF0012F9B2000004A5B1 /* FluxWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		7A0901F92E731A7600DA020D /* ConfigurationImportExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0901F82E731A7600DA020D /* ConfigurationImportExportView.swift */; };
 		7A1779602E645EEC00462B11 /* FeedRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A17795F2E645EEC00462B11 /* FeedRow.swift */; };
 		7A1779622E645EEF00462B11 /* AddFeedSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1779612E645EEF00462B11 /* AddFeedSheet.swift */; };
 		7A1779642E645EF000462B11 /* NotificationName+App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1779632E645EF000462B11 /* NotificationName+App.swift */; };
-		7A595CC02E6B0544004BF24A /* NewsletterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A595CBF2E6B0544004BF24A /* NewsletterView.swift */; };
-		7A595CC92E6B298D004BF24A /* NewsletterScheduleSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A595CC82E6B298D004BF24A /* NewsletterScheduleSheet.swift */; };
+		7A595C022E7A0000004BF24A /* WhatsNewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A595C012E7A0000004BF24A /* WhatsNewView.swift */; };
 		7A9C89CF2E5F996700BF4D8B /* ExyteGrid in Frameworks */ = {isa = PBXBuildFile; productRef = 7A9C89CE2E5F996700BF4D8B /* ExyteGrid */; };
 		7AA3552E2E58C18600D70E5E /* FeedKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7AA3552D2E58C18600D70E5E /* FeedKit */; };
 		7AA355302E58C18600D70E5E /* XMLKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7AA3552F2E58C18600D70E5E /* XMLKit */; };
 		7AB37A702E78A5C800F79F59 /* Defaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AB37A6F2E78A5C800F79F59 /* Defaults.swift */; };
 		7AEECB8F2E5B4DA3004A5B19 /* AISettingsInlineSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AEECB8E2E5B4DA3004A5B19 /* AISettingsInlineSheet.swift */; };
 		7AEECB912E5B5352004A5B19 /* WebView 2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AEECB902E5B5352004A5B19 /* WebView 2.swift */; };
-		7ALOGSW012F9A0000004A5B19 /* LogsWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ALOGSW002F9A0000004A5B19 /* LogsWindowView.swift */; };
 		7AEECB942E5B6178004A5B19 /* Readability.js in Resources */ = {isa = PBXBuildFile; fileRef = 7AEECB932E5B6178004A5B19 /* Readability.js */; };
 		7AF100112E58D00000D70E5E /* FluxApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AF100012E58D00000D70E5E /* FluxApp.swift */; };
 		7AF100122E58D00000D70E5E /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AF100022E58D00000D70E5E /* ContentView.swift */; };
@@ -38,7 +41,39 @@
 		7AFAEE252E5E278F0051E757 /* LOCALISATION_README.md in Resources */ = {isa = PBXBuildFile; fileRef = 7AFAEE232E5E278F0051E757 /* LOCALISATION_README.md */; };
 		7AFAEE262E5E278F0051E757 /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AFAEE242E5E278F0051E757 /* Localization.swift */; };
 		7AFAEE282E5E29190051E757 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AFAEE272E5E29190051E757 /* Keychain.swift */; };
+		7ALOGSW012F9A0000004A5B19 /* LogsWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ALOGSW002F9A0000004A5B19 /* LogsWindowView.swift */; };
+		7AMKIT012F7B000000AA0001 /* MusicKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AMKIT002F7B000000AA0001 /* MusicKitService.swift */; };
+		8A5AF1012F66D100A0683A01 /* FluxSafariExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 8A5AF10A2F66D100A0683A01 /* FluxSafariExtension.appex */; platformFilters = (macos, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		8A5AF1022F66D100A0683A01 /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A5AF10B2F66D100A0683A01 /* SafariWebExtensionHandler.swift */; };
+		8A5AF1032F66D100A0683A01 /* popup.js in Resources */ = {isa = PBXBuildFile; fileRef = 8A5AF10D2F66D100A0683A01 /* popup.js */; };
+		8A5AF1042F66D100A0683A01 /* popup.html in Resources */ = {isa = PBXBuildFile; fileRef = 8A5AF10E2F66D100A0683A01 /* popup.html */; };
+		8A5AF1052F66D100A0683A01 /* icons in Resources */ = {isa = PBXBuildFile; fileRef = 8A5AF10F2F66D100A0683A01 /* icons */; };
+		8A5AF1062F66D100A0683A01 /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = 8A5AF1102F66D100A0683A01 /* manifest.json */; };
+		8A5AF1072F66D100A0683A01 /* popup.css in Resources */ = {isa = PBXBuildFile; fileRef = 8A5AF1112F66D100A0683A01 /* popup.css */; };
+		8A5AF1082F66D100A0683A01 /* SafariExtensionSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A5AF1122F66D100A0683A01 /* SafariExtensionSupport.swift */; };
+		9A7CFE122F9C100000C0DE01 /* FeedTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A7CFE112F9C100000C0DE01 /* FeedTimelineView.swift */; };
+		AD0002002E5E278F0051E757 /* AdKeywordFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD0001002E5E278F0051E757 /* AdKeywordFilter.swift */; };
+		NTSV00012F7C000000AA0002 /* NotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = NTSV00002F7C000000AA0002 /* NotesView.swift */; };
+		PLYM00012FA1000000AA0001 /* PolymarketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = PLYM00002FA1000000AA0001 /* PolymarketService.swift */; };
+		PLYM00032FA1000000AA0002 /* SignauxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PLYM00022FA1000000AA0002 /* SignauxView.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		57WIDPRX012F9B3000004A5B1 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7AA3550C2E58BD2600D70E5E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7AWID0302E6AAAAA00WID001;
+			remoteInfo = FluxWidgetsExtension;
+		};
+		8A5AF1402F66D200A0683A01 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7AA3550C2E58BD2600D70E5E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8A5AF1332F66D100A0683A01;
+			remoteInfo = FluxSafariExtension;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		7A1779842E6485EF00462B11 /* Embed Foundation Extensions */ = {
@@ -47,6 +82,8 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
+				8A5AF1012F66D100A0683A01 /* FluxSafariExtension.appex in Embed Foundation Extensions */,
+				57WIDB0022F9B2000004A5B1 /* FluxWidgetsExtension.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -54,24 +91,29 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		313BDBFE44EEE37CED46896D /* DiscoveryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryView.swift; sourceTree = "<group>"; };
 		4AD08ADB2F22C45F004400BA /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		4AD08ADD2F22CC47004400BA /* HapticFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticFeedback.swift; sourceTree = "<group>"; };
 		4AD08ADF2F22CFC8004400BA /* RSSFeedSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RSSFeedSuggestions.swift; sourceTree = "<group>"; };
 		4AEC48D72F23503100369D3A /* GlowEffect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlowEffect.swift; sourceTree = "<group>"; };
 		4AEC48DB2F24FFA700369D3A /* blur.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = blur.metal; sourceTree = "<group>"; };
+		4AF8AF582F69A1E800AA20D4 /* NotesWidgetSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesWidgetSync.swift; sourceTree = "<group>"; };
+		57WIDA0012F9B2000004A5B1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		57WIDF0012F9B2000004A5B1 /* FluxWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FluxWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		57WIDF0022F9B2000004A5B1 /* FluxWidgetsExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluxWidgetsExtension.swift; sourceTree = "<group>"; };
+		57WIDF0032F9B2000004A5B1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		57WIDF0042F9B2000004A5B1 /* FluxWidgetsExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FluxWidgetsExtension.entitlements; sourceTree = "<group>"; };
 		7A0901F82E731A7600DA020D /* ConfigurationImportExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationImportExportView.swift; sourceTree = "<group>"; };
 		7A17795F2E645EEC00462B11 /* FeedRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedRow.swift; sourceTree = "<group>"; };
 		7A1779612E645EEF00462B11 /* AddFeedSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddFeedSheet.swift; sourceTree = "<group>"; };
 		7A1779632E645EF000462B11 /* NotificationName+App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NotificationName+App.swift"; sourceTree = "<group>"; };
 		7A17796B2E6485EE00462B11 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		7A17796D2E6485EE00462B11 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
-		7A595CBF2E6B0544004BF24A /* NewsletterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewsletterView.swift; sourceTree = "<group>"; };
-		7A595CC82E6B298D004BF24A /* NewsletterScheduleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewsletterScheduleSheet.swift; sourceTree = "<group>"; };
+		7A595C012E7A0000004BF24A /* WhatsNewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatsNewView.swift; sourceTree = "<group>"; };
 		7AA355142E58BD2600D70E5E /* Flux.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Flux.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7AB37A6F2E78A5C800F79F59 /* Defaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Defaults.swift; sourceTree = "<group>"; };
 		7AEECB8E2E5B4DA3004A5B19 /* AISettingsInlineSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsInlineSheet.swift; sourceTree = "<group>"; };
 		7AEECB902E5B5352004A5B19 /* WebView 2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WebView 2.swift"; sourceTree = "<group>"; };
-		7ALOGSW002F9A0000004A5B19 /* LogsWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogsWindowView.swift; sourceTree = "<group>"; };
 		7AEECB932E5B6178004A5B19 /* Readability.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = Readability.js; sourceTree = "<group>"; };
 		7AF100012E58D00000D70E5E /* FluxApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluxApp.swift; sourceTree = "<group>"; };
 		7AF100022E58D00000D70E5E /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -82,12 +124,36 @@
 		7AF100072E58D00000D70E5E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7AF1001B2E58D10000D70E5E /* ArticlesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticlesView.swift; sourceTree = "<group>"; };
 		7AF1001D2E58D20000D70E5E /* Flux.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Flux.entitlements; sourceTree = "<group>"; };
+		7AF1001D2E58D20000D70E60 /* FluxiOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FluxiOS.entitlements; sourceTree = "<group>"; };
 		7AFAEE232E5E278F0051E757 /* LOCALISATION_README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = LOCALISATION_README.md; sourceTree = "<group>"; };
 		7AFAEE242E5E278F0051E757 /* Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Localization.swift; sourceTree = "<group>"; };
 		7AFAEE272E5E29190051E757 /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keychain.swift; sourceTree = "<group>"; };
+		7ALOGSW002F9A0000004A5B19 /* LogsWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogsWindowView.swift; sourceTree = "<group>"; };
+		7AMKIT002F7B000000AA0001 /* MusicKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicKitService.swift; sourceTree = "<group>"; };
+		8A5AF10A2F66D100A0683A01 /* FluxSafariExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FluxSafariExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		8A5AF10B2F66D100A0683A01 /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
+		8A5AF10C2F66D100A0683A01 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		8A5AF10D2F66D100A0683A01 /* popup.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = popup.js; path = ChromeExtension/popup.js; sourceTree = SOURCE_ROOT; };
+		8A5AF10E2F66D100A0683A01 /* popup.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = popup.html; path = ChromeExtension/popup.html; sourceTree = SOURCE_ROOT; };
+		8A5AF10F2F66D100A0683A01 /* icons */ = {isa = PBXFileReference; lastKnownFileType = folder; name = icons; path = ChromeExtension/icons; sourceTree = SOURCE_ROOT; };
+		8A5AF1102F66D100A0683A01 /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = manifest.json; path = ChromeExtension/manifest.json; sourceTree = SOURCE_ROOT; };
+		8A5AF1112F66D100A0683A01 /* popup.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; name = popup.css; path = ChromeExtension/popup.css; sourceTree = SOURCE_ROOT; };
+		8A5AF1122F66D100A0683A01 /* SafariExtensionSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariExtensionSupport.swift; sourceTree = "<group>"; };
+		9A7CFE112F9C100000C0DE01 /* FeedTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedTimelineView.swift; sourceTree = "<group>"; };
+		AD0001002E5E278F0051E757 /* AdKeywordFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdKeywordFilter.swift; sourceTree = "<group>"; };
+		NTSV00002F7C000000AA0002 /* NotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesView.swift; sourceTree = "<group>"; };
+		PLYM00002FA1000000AA0001 /* PolymarketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolymarketService.swift; sourceTree = "<group>"; };
+		PLYM00022FA1000000AA0002 /* SignauxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignauxView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		57WIDP0012F9B2000004A5B1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		7AA355112E58BD2600D70E5E /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -99,9 +165,27 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		8A5AF1302F66D100A0683A01 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		57WIDG0012F9B2000004A5B1 /* FluxWidgetsExtension */ = {
+			isa = PBXGroup;
+			children = (
+				57WIDA0012F9B2000004A5B1 /* Assets.xcassets */,
+				57WIDF0022F9B2000004A5B1 /* FluxWidgetsExtension.swift */,
+				57WIDF0032F9B2000004A5B1 /* Info.plist */,
+				57WIDF0042F9B2000004A5B1 /* FluxWidgetsExtension.entitlements */,
+			);
+			path = FluxWidgetsExtension;
+			sourceTree = "<group>";
+		};
 		7A17796A2E6485EE00462B11 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
@@ -115,6 +199,8 @@
 			isa = PBXGroup;
 			children = (
 				7AA355162E58BD2600D70E5E /* Flux */,
+				8A5AF1202F66D100A0683A01 /* FluxSafariWebExtension */,
+				57WIDG0012F9B2000004A5B1 /* FluxWidgetsExtension */,
 				7A17796A2E6485EE00462B11 /* Frameworks */,
 				7AA355152E58BD2600D70E5E /* Products */,
 			);
@@ -124,6 +210,8 @@
 			isa = PBXGroup;
 			children = (
 				7AA355142E58BD2600D70E5E /* Flux.app */,
+				8A5AF10A2F66D100A0683A01 /* FluxSafariExtension.appex */,
+				57WIDF0012F9B2000004A5B1 /* FluxWidgetsExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -138,15 +226,21 @@
 				4AD08ADB2F22C45F004400BA /* OnboardingView.swift */,
 				7AB37A6F2E78A5C800F79F59 /* Defaults.swift */,
 				7A0901F82E731A7600DA020D /* ConfigurationImportExportView.swift */,
-				7A595CC82E6B298D004BF24A /* NewsletterScheduleSheet.swift */,
-				7A595CBF2E6B0544004BF24A /* NewsletterView.swift */,
+				9A7CFE112F9C100000C0DE01 /* FeedTimelineView.swift */,
+				7A595C012E7A0000004BF24A /* WhatsNewView.swift */,
+				313BDBFE44EEE37CED46896D /* DiscoveryView.swift */,
+				NTSV00002F7C000000AA0002 /* NotesView.swift */,
+				PLYM00002FA1000000AA0001 /* PolymarketService.swift */,
+				PLYM00022FA1000000AA0002 /* SignauxView.swift */,
 				7AFAEE272E5E29190051E757 /* Keychain.swift */,
 				7AFAEE232E5E278F0051E757 /* LOCALISATION_README.md */,
 				7AFAEE242E5E278F0051E757 /* Localization.swift */,
 				7AEECB932E5B6178004A5B19 /* Readability.js */,
 				7AF1001D2E58D20000D70E5E /* Flux.entitlements */,
+				7AF1001D2E58D20000D70E60 /* FluxiOS.entitlements */,
 				7AF100072E58D00000D70E5E /* Assets.xcassets */,
 				7AF100012E58D00000D70E5E /* FluxApp.swift */,
+				8A5AF1122F66D100A0683A01 /* SafariExtensionSupport.swift */,
 				7AF100022E58D00000D70E5E /* ContentView.swift */,
 				7AF100032E58D00000D70E5E /* AppSidebar.swift */,
 				7AF1001B2E58D10000D70E5E /* ArticlesView.swift */,
@@ -154,13 +248,38 @@
 				7AF100052E58D00000D70E5E /* FeedService.swift */,
 				7AF100062E58D00000D70E5E /* Models.swift */,
 				7AEECB8E2E5B4DA3004A5B19 /* AISettingsInlineSheet.swift */,
+				AD0001002E5E278F0051E757 /* AdKeywordFilter.swift */,
 				7AEECB902E5B5352004A5B19 /* WebView 2.swift */,
 				7ALOGSW002F9A0000004A5B19 /* LogsWindowView.swift */,
 				7A17795F2E645EEC00462B11 /* FeedRow.swift */,
 				7A1779612E645EEF00462B11 /* AddFeedSheet.swift */,
 				7A1779632E645EF000462B11 /* NotificationName+App.swift */,
+				4AF8AF582F69A1E800AA20D4 /* NotesWidgetSync.swift */,
+				7AMKIT002F7B000000AA0001 /* MusicKitService.swift */,
 			);
 			path = Flux;
+			sourceTree = "<group>";
+		};
+		8A5AF1202F66D100A0683A01 /* FluxSafariWebExtension */ = {
+			isa = PBXGroup;
+			children = (
+				8A5AF1212F66D100A0683A01 /* Resources */,
+				8A5AF10B2F66D100A0683A01 /* SafariWebExtensionHandler.swift */,
+				8A5AF10C2F66D100A0683A01 /* Info.plist */,
+			);
+			path = FluxSafariWebExtension;
+			sourceTree = "<group>";
+		};
+		8A5AF1212F66D100A0683A01 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				8A5AF10D2F66D100A0683A01 /* popup.js */,
+				8A5AF10E2F66D100A0683A01 /* popup.html */,
+				8A5AF10F2F66D100A0683A01 /* icons */,
+				8A5AF1102F66D100A0683A01 /* manifest.json */,
+				8A5AF1112F66D100A0683A01 /* popup.css */,
+			);
+			name = Resources;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -178,6 +297,8 @@
 			buildRules = (
 			);
 			dependencies = (
+				57WIDDEP012F9B3000004A5B1 /* PBXTargetDependency */,
+				8A5AF1412F66D200A0683A01 /* PBXTargetDependency */,
 			);
 			name = Flux;
 			packageProductDependencies = (
@@ -190,6 +311,44 @@
 			productReference = 7AA355142E58BD2600D70E5E /* Flux.app */;
 			productType = "com.apple.product-type.application";
 		};
+		7AWID0302E6AAAAA00WID001 /* FluxWidgetsExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 57WIDCL012F9B2000004A5B1 /* Build configuration list for PBXNativeTarget "FluxWidgetsExtension" */;
+			buildPhases = (
+				57WIDP0032F9B2000004A5B1 /* Sources */,
+				57WIDP0012F9B2000004A5B1 /* Frameworks */,
+				57WIDP0022F9B2000004A5B1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FluxWidgetsExtension;
+			packageProductDependencies = (
+			);
+			productName = FluxWidgetsExtension;
+			productReference = 57WIDF0012F9B2000004A5B1 /* FluxWidgetsExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		8A5AF1332F66D100A0683A01 /* FluxSafariExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8A5AF1362F66D100A0683A01 /* Build configuration list for PBXNativeTarget "FluxSafariExtension" */;
+			buildPhases = (
+				8A5AF1312F66D100A0683A01 /* Sources */,
+				8A5AF1302F66D100A0683A01 /* Frameworks */,
+				8A5AF1322F66D100A0683A01 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FluxSafariExtension;
+			packageProductDependencies = (
+			);
+			productName = FluxSafariExtension;
+			productReference = 8A5AF10A2F66D100A0683A01 /* FluxSafariExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -198,10 +357,16 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2600;
-				LastUpgradeCheck = 2620;
+				LastUpgradeCheck = 2630;
 				TargetAttributes = {
 					7AA355132E58BD2600D70E5E = {
 						CreatedOnToolsVersion = 26.0;
+					};
+					7AWID0302E6AAAAA00WID001 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					8A5AF1332F66D100A0683A01 = {
+						CreatedOnToolsVersion = 26.2;
 					};
 				};
 			};
@@ -224,12 +389,22 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				8A5AF1332F66D100A0683A01 /* FluxSafariExtension */,
 				7AA355132E58BD2600D70E5E /* Flux */,
+				7AWID0302E6AAAAA00WID001 /* FluxWidgetsExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		57WIDP0022F9B2000004A5B1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				57WIDA0022F9B2000004A5B1 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		7AA355122E58BD2600D70E5E /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -240,9 +415,29 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		8A5AF1322F66D100A0683A01 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8A5AF1072F66D100A0683A01 /* popup.css in Resources */,
+				8A5AF1062F66D100A0683A01 /* manifest.json in Resources */,
+				8A5AF1052F66D100A0683A01 /* icons in Resources */,
+				8A5AF1042F66D100A0683A01 /* popup.html in Resources */,
+				8A5AF1032F66D100A0683A01 /* popup.js in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		57WIDP0032F9B2000004A5B1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				57WIDB0012F9B2000004A5B1 /* FluxWidgetsExtension.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		7AA355102E58BD2600D70E5E /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -252,18 +447,23 @@
 				7AFAEE262E5E278F0051E757 /* Localization.swift in Sources */,
 				7AF100122E58D00000D70E5E /* ContentView.swift in Sources */,
 				7A1779602E645EEC00462B11 /* FeedRow.swift in Sources */,
+				4AF8AF592F69A1E800AA20D4 /* NotesWidgetSync.swift in Sources */,
 				7AF100132E58D00000D70E5E /* AppSidebar.swift in Sources */,
 				7AF1001C2E58D10000D70E5E /* ArticlesView.swift in Sources */,
-				7A595CC02E6B0544004BF24A /* NewsletterView.swift in Sources */,
+				8A5AF1082F66D100A0683A01 /* SafariExtensionSupport.swift in Sources */,
+				9A7CFE122F9C100000C0DE01 /* FeedTimelineView.swift in Sources */,
+				7A595C022E7A0000004BF24A /* WhatsNewView.swift in Sources */,
+				574B1E458DD72477A93D9176 /* DiscoveryView.swift in Sources */,
+				NTSV00012F7C000000AA0002 /* NotesView.swift in Sources */,
 				4AD08AE02F22CFC8004400BA /* RSSFeedSuggestions.swift in Sources */,
 				4AD08ADE2F22CC47004400BA /* HapticFeedback.swift in Sources */,
-				7A595CC92E6B298D004BF24A /* NewsletterScheduleSheet.swift in Sources */,
 				7A1779622E645EEF00462B11 /* AddFeedSheet.swift in Sources */,
 				7AB37A702E78A5C800F79F59 /* Defaults.swift in Sources */,
 				7AFAEE282E5E29190051E757 /* Keychain.swift in Sources */,
 				7A1779642E645EF000462B11 /* NotificationName+App.swift in Sources */,
 				4AD08ADC2F22C45F004400BA /* OnboardingView.swift in Sources */,
 				7AEECB8F2E5B4DA3004A5B19 /* AISettingsInlineSheet.swift in Sources */,
+				AD0002002E5E278F0051E757 /* AdKeywordFilter.swift in Sources */,
 				7ALOGSW012F9A0000004A5B19 /* LogsWindowView.swift in Sources */,
 				7AF100142E58D00000D70E5E /* FeedsView.swift in Sources */,
 				7AF100152E58D00000D70E5E /* FeedService.swift in Sources */,
@@ -271,12 +471,119 @@
 				7AF100162E58D00000D70E5E /* Models.swift in Sources */,
 				7AEECB912E5B5352004A5B19 /* WebView 2.swift in Sources */,
 				7A0901F92E731A7600DA020D /* ConfigurationImportExportView.swift in Sources */,
+				7AMKIT012F7B000000AA0001 /* MusicKitService.swift in Sources */,
+				PLYM00012FA1000000AA0001 /* PolymarketService.swift in Sources */,
+				PLYM00032FA1000000AA0002 /* SignauxView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8A5AF1312F66D100A0683A01 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8A5AF1022F66D100A0683A01 /* SafariWebExtensionHandler.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		57WIDDEP012F9B3000004A5B1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7AWID0302E6AAAAA00WID001 /* FluxWidgetsExtension */;
+			targetProxy = 57WIDPRX012F9B3000004A5B1 /* PBXContainerItemProxy */;
+		};
+		8A5AF1412F66D200A0683A01 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			platformFilters = (
+				macos,
+			);
+			target = 8A5AF1332F66D100A0683A01 /* FluxSafariExtension */;
+			targetProxy = 8A5AF1402F66D200A0683A01 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		57WIDC012F9B2000004A5B1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
+				CODE_SIGN_ENTITLEMENTS = FluxWidgetsExtension/FluxWidgetsExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 22;
+				DEVELOPMENT_TEAM = MKAFV9VL9V;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FluxWidgetsExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0.4;
+				PRODUCT_BUNDLE_IDENTIFIER = com.adriendonot.fluxapp.FluxWidgetsExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		57WIDC022F9B2000004A5B1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = NO;
+				CODE_SIGN_ENTITLEMENTS = FluxWidgetsExtension/FluxWidgetsExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 22;
+				DEVELOPMENT_TEAM = MKAFV9VL9V;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FluxWidgetsExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0.4;
+				PRODUCT_BUNDLE_IDENTIFIER = com.adriendonot.fluxapp.FluxWidgetsExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 		7AA3551D2E58BD2700D70E5E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -332,12 +639,13 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = macosx;
+				SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -393,11 +701,12 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = macosx;
+				SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 			};
@@ -407,38 +716,51 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "AppIcon-iOS";
 				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=macosx*]" = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
-				AUTOMATION_APPLE_EVENTS = NO;
+				AUTOMATION_APPLE_EVENTS = YES;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
-				CODE_SIGN_ENTITLEMENTS = Flux/Flux.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Flux/FluxiOS.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Flux/Flux.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 22;
 				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = MKAFV9VL9V;
 				ENABLE_APP_SANDBOX = YES;
-				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Flux/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Flux;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Créé par Adrien DONOT";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.adriendonot.fluxapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
-				SDKROOT = macosx;
+				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = macosx;
+				SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -446,6 +768,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -453,42 +776,132 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "AppIcon-iOS";
 				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=macosx*]" = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
-				AUTOMATION_APPLE_EVENTS = NO;
+				AUTOMATION_APPLE_EVENTS = YES;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = NO;
-				CODE_SIGN_ENTITLEMENTS = Flux/Flux.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Flux/FluxiOS.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Flux/Flux.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 22;
 				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = MKAFV9VL9V;
 				ENABLE_APP_SANDBOX = YES;
-				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Flux/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Flux;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Créé par Adrien DONOT";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.adriendonot.fluxapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
-				SDKROOT = macosx;
+				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = macosx;
+				SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		8A5AF1342F66D100A0683A01 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 22;
+				DEVELOPMENT_TEAM = MKAFV9VL9V;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FluxSafariWebExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0.4;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.adriendonot.fluxapp.safari;
+				PRODUCT_NAME = FluxSafariExtension;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		8A5AF1352F66D100A0683A01 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = NO;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 22;
+				DEVELOPMENT_TEAM = MKAFV9VL9V;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FluxSafariWebExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0.4;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.adriendonot.fluxapp.safari;
+				PRODUCT_NAME = FluxSafariExtension;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
@@ -498,6 +911,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		57WIDCL012F9B2000004A5B1 /* Build configuration list for PBXNativeTarget "FluxWidgetsExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				57WIDC012F9B2000004A5B1 /* Debug */,
+				57WIDC022F9B2000004A5B1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		7AA3550F2E58BD2600D70E5E /* Build configuration list for PBXProject "Flux" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -505,7 +927,7 @@
 				7AA3551E2E58BD2700D70E5E /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
 		7AA3551F2E58BD2700D70E5E /* Build configuration list for PBXNativeTarget "Flux" */ = {
 			isa = XCConfigurationList;
@@ -514,7 +936,16 @@
 				7AA355212E58BD2700D70E5E /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
+		};
+		8A5AF1362F66D100A0683A01 /* Build configuration list for PBXNativeTarget "FluxSafariExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8A5AF1342F66D100A0683A01 /* Debug */,
+				8A5AF1352F66D100A0683A01 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
 

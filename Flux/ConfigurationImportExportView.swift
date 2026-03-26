@@ -10,6 +10,7 @@ import AppKit
 
 struct ConfigurationImportExportView: View {
     @Environment(FeedService.self) private var feedService
+    let language: SupportedLanguage
     private let lm = LocalizationManager.shared
     @State private var isExporting = false
     @State private var isImporting = false
@@ -55,25 +56,21 @@ struct ConfigurationImportExportView: View {
             HStack(spacing: 8) {
                 // Bouton Export
                 Button(action: exportConfiguration) {
-                    HStack(spacing: 4) {
+                    Label {
+                        Text(lm.localizedString(.exportConfig))
+                            .font(.system(size: 12, weight: .semibold))
+                    } icon: {
                         if isExporting || isPreparingExport {
                             ProgressView()
-                                .scaleEffect(0.7)
+                                .controlSize(.small)
                         } else {
                             Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.system(size: 12, weight: .semibold))
                         }
-                        Text(lm.localizedString(.exportConfig))
-                            .font(.system(size: 12, weight: .medium))
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.blue.opacity(0.08))
-                    .foregroundStyle(.blue)
-                    .cornerRadius(6)
                 }
                 .disabled(isExporting || isImporting || isPreparingExport)
-                .buttonStyle(.plain)
+                .buttonStyle(.glass)
                 
                 // Bouton Import
                 Button(action: { 
@@ -83,42 +80,30 @@ struct ConfigurationImportExportView: View {
                     showingFilePicker = true
                     #endif
                 }) {
-                    HStack(spacing: 4) {
+                    Label {
+                        Text(lm.localizedString(.importConfig))
+                            .font(.system(size: 12, weight: .semibold))
+                    } icon: {
                         if isImporting {
                             ProgressView()
-                                .scaleEffect(0.7)
+                                .controlSize(.small)
                         } else {
                             Image(systemName: "square.and.arrow.down")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.system(size: 12, weight: .semibold))
                         }
-                        Text(lm.localizedString(.importConfig))
-                            .font(.system(size: 12, weight: .medium))
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.green.opacity(0.08))
-                    .foregroundStyle(.green)
-                    .cornerRadius(6)
                 }
                 .disabled(isExporting || isImporting || isPreparingExport)
-                .buttonStyle(.plain)
+                .buttonStyle(.glass)
                 
                 // Bouton de suppression
-                Button(action: { showingDeleteAlert = true }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "trash")
-                            .font(.system(size: 12, weight: .medium))
-                        Text(lm.localizedString(.deleteConfig))
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.red.opacity(0.08))
-                    .foregroundStyle(.red)
-                    .cornerRadius(6)
+                Button(role: .destructive, action: { showingDeleteAlert = true }) {
+                    Label(lm.localizedString(.deleteConfig), systemImage: "trash")
+                        .font(.system(size: 12, weight: .semibold))
                 }
                 .disabled(isExporting || isImporting || isPreparingExport)
-                .buttonStyle(.plain)
+                .buttonStyle(.glass)
+                .tint(.red)
                 
                 Spacer()
             }
@@ -248,6 +233,7 @@ struct ConfigurationImportExportView: View {
             .background(Color.gray.opacity(0.08))
             .cornerRadius(6)
         }
+        .id(language)
         .fileExporter(
             isPresented: $isExporting,
             document: exportDocument,
@@ -466,6 +452,6 @@ struct ConfigurationDocument: FileDocument {
 }
 
 #Preview {
-    ConfigurationImportExportView()
+    ConfigurationImportExportView(language: .english)
         .environment(FeedService(context: try! ModelContext(ModelContainer(for: Feed.self))))
 }

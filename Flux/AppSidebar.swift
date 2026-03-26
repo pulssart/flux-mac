@@ -2,6 +2,9 @@
 // Vue principale avec navigation sidebar
 import SwiftUI
 import Foundation
+#if canImport(WidgetKit)
+import WidgetKit
+#endif
 #if canImport(AppKit)
 import AppKit
 private let bodyPlus2Font: Font = {
@@ -36,14 +39,25 @@ import AppKit
 private let sidebarItemTextOpacity: Double = 0.80
 
 struct AppSidebar: View {
+    private struct AddFeedDeepLinkRequest {
+        let preferredURL: URL
+        let fallbackSiteURL: URL?
+    }
+
     @Environment(\.modelContext) private var modelContext
     @Environment(FeedService.self) private var feedService
+    @Environment(DeepLinkRouter.self) private var deepLinkRouter
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @AppStorage("windowBlurEnabled") private var windowBlurEnabled: Bool = false
+    #if os(macOS)
+    @AppStorage("safariExtensionAnnouncementToken") private var safariExtensionAnnouncementToken: String = ""
+    #endif
     private let lm = LocalizationManager.shared
     @State private var selectedFeedId: UUID? = AppSidebar.allFeedsId
     @State private var selectedFolderId: UUID? = nil
+    @State private var deepLinkArticleRequest: ArticleOpenRequest? = nil
     @State private var showAddSheet = false
     @State private var showSettings = false
     @State private var newFeedURL = ""
@@ -53,8 +67,12 @@ struct AppSidebar: View {
     @State private var readerWebURL: URL?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var isWebOverlayOpen: Bool = false
+    @State private var showIPhoneSidebar: Bool = false
+    @State private var sidebarMeasuredWidth: CGFloat = 280
+    @State private var mainNavigationWidth: CGFloat = 0
     // Effondrement des sections
     @AppStorage("sidebar.collapse.youtube") private var collapseYouTube: Bool = false
+    @AppStorage("sidebar.collapse.music") private var collapseMusic: Bool = false
     @AppStorage("sidebar.collapse.other") private var collapseOther: Bool = false
     // Dossiers: édition et expansion
     @State private var renamingFolderId: UUID? = nil
@@ -64,12 +82,19 @@ struct AppSidebar: View {
     @State private var dragTargetFeedId: UUID? = nil
     // Onboarding
     @State private var showOnboarding: Bool = !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+    @State private var showWhatsNew: Bool = false
+    #if os(macOS)
+    @State private var showSafariExtensionAnnouncement = false
+    #endif
     
     // Identifiants sentinelles pour les entrées spéciales
     private static let allFeedsId = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
     private static let favoritesId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
     private static let newsletterId = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
     private static let feedTimelineId = UUID(uuidString: "00000000-0000-0000-0000-000000000003")!
+    private static let discoveryId = UUID(uuidString: "00000000-0000-0000-0000-000000000004")!
+    private static let notesId = UUID(uuidString: "00000000-0000-0000-0000-000000000006")!
+    private static let signauxId = UUID(uuidString: "00000000-0000-0000-0000-000000000007")!
     
     // Propriété calculée pour déterminer si la sidebar doit être visible
     private var shouldShowSidebar: Bool {
@@ -91,15 +116,55 @@ struct AppSidebar: View {
             return 280
         }
     }
+
+    // En rail étroit, on évite l'overflow ">>" des items toolbar
+    private var isSidebarCollapsedRail: Bool {
+        sidebarMeasuredWidth < 120
+    }
+
+    private var isIPhoneDevice: Bool {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .phone
+        #else
+        false
+        #endif
+    }
+
+    private var prefersOverlaySidebarOnIPad: Bool {
+        #if os(iOS)
+        guard UIDevice.current.userInterfaceIdiom == .pad else { return false }
+        if verticalSizeClass == .regular {
+            return true
+        }
+        return mainNavigationWidth > 0 && mainNavigationWidth < 980
+        #else
+        false
+        #endif
+    }
+
+    @ViewBuilder
+    private func ipadSectionTitleText(_ title: String) -> some View {
+        #if os(iOS)
+        Text(title)
+            .font(bodyPlus2Font)
+            .opacity(sidebarItemTextOpacity)
+        #else
+        Text(title)
+            .opacity(sidebarItemTextOpacity)
+        #endif
+    }
     
     // Propriété calculée pour le titre dynamique de la fenêtre
     private var dynamicTitle: String {
         if let selectedFeedId = selectedFeedId {
-            if selectedFeedId == Self.newsletterId {
-                return lm.localizedString(.newsletterTitle)
-            }
             if selectedFeedId == Self.feedTimelineId {
                 return lm.localizedString(.newsletterFeed)
+            }
+            if selectedFeedId == Self.notesId {
+                return notesSectionTitle
+            }
+            if selectedFeedId == Self.signauxId {
+                return lm.localizedString(.signals)
             }
             if selectedFeedId != Self.allFeedsId && selectedFeedId != Self.favoritesId,
                let feed = feedService.feeds.first(where: { $0.id == selectedFeedId }) {
@@ -107,6 +172,22 @@ struct AppSidebar: View {
             }
         }
         return "Flux"
+    }
+
+    private var notesSectionTitle: String {
+        switch lm.currentLanguage {
+        case .french: return "Notes"
+        case .english: return "Notes"
+        case .spanish: return "Notas"
+        case .german: return "Notizen"
+        case .italian: return "Note"
+        case .portuguese: return "Notas"
+        case .japanese: return "ノート"
+        case .chinese: return "笔记"
+        case .korean: return "노트"
+        case .russian: return "Заметки"
+        @unknown default: return "Notes"
+        }
     }
     
     var body: some View {
@@ -119,9 +200,19 @@ struct AppSidebar: View {
         .sheet(isPresented: settingsSheetBinding) {
             settingsSheetContent
         }
-        .sheet(isPresented: $showOnboarding) {
+        #if os(macOS)
+        .sheet(isPresented: $showSafariExtensionAnnouncement) {
+            SafariExtensionAnnouncementSheet(isPresented: $showSafariExtensionAnnouncement)
+        }
+        #endif
+        .sheet(isPresented: $showOnboarding, onDismiss: {
+            showAddSheet = true
+        }) {
             OnboardingView(isPresented: $showOnboarding)
                 .environment(feedService)
+        }
+        .sheet(isPresented: $showWhatsNew) {
+            WhatsNewView(isPresented: $showWhatsNew)
         }
         .alert(lm.localizedString(.deleteFeed), isPresented: $showDeleteAlert) {
             deleteAlertButtons
@@ -143,13 +234,153 @@ struct AppSidebar: View {
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ExpandSidebar"))) { _ in
             handleExpandSidebar()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
+            handleOpenSettings()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showWhatsNew)) { _ in
+            showWhatsNew = true
+        }
+        .onAppear {
+            // Initialiser le cache des compteurs non lus par dossier
+            var counts: [UUID: Int] = [:]
+            for folder in feedService.folders {
+                let ids = Set(feeds(in: folder).map { $0.id })
+                counts[folder.id] = feedService.articles.reduce(0) { partial, article in
+                    partial + ((ids.contains(article.feedId) && article.isRead == false) ? 1 : 0)
+                }
+            }
+            cachedFolderUnreadCounts = counts
+            consumePendingDeepLinkIfNeeded()
+            #if os(macOS)
+            maybePresentSafariExtensionAnnouncementIfNeeded()
+            #endif
+            // Show What's New once per version (only after onboarding)
+            if !showOnboarding && shouldShowWhatsNew() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    showWhatsNew = true
+                }
+            }
+        }
+        .onChange(of: feedService.isRefreshing) { _, refreshing in
+            if !refreshing {
+                // Mettre à jour le cache des compteurs non lus par dossier
+                var counts: [UUID: Int] = [:]
+                for folder in feedService.folders {
+                    let ids = Set(feeds(in: folder).map { $0.id })
+                    counts[folder.id] = feedService.articles.reduce(0) { partial, article in
+                        partial + ((ids.contains(article.feedId) && article.isRead == false) ? 1 : 0)
+                    }
+                }
+                cachedFolderUnreadCounts = counts
+            }
+        }
+        .onChange(of: deepLinkRouter.eventId) { _, _ in
+            consumePendingDeepLinkIfNeeded()
+        }
+        .onChange(of: showOnboarding) { _, newValue in
+            #if os(macOS)
+            if newValue == false {
+                maybePresentSafariExtensionAnnouncementIfNeeded()
+            }
+            #endif
+            // New users finishing onboarding: mark What's New as seen (they just set up)
+            if newValue == false {
+                markWhatsNewAsSeen()
+            }
+        }
     }
     
     // MARK: - Body Subviews
     
     private var mainNavigationView: some View {
+        GeometryReader { proxy in
+            Group {
+                #if os(macOS)
+                navigationSplitViewContent
+                #else
+                if isIPhoneDevice {
+                    iPhoneNavigationContent
+                } else if prefersOverlaySidebarOnIPad {
+                    navigationSplitViewContent
+                        .navigationSplitViewStyle(.prominentDetail)
+                } else {
+                    navigationSplitViewContent
+                        .navigationSplitViewStyle(.balanced)
+                }
+                #endif
+            }
+            .onAppear { updateNavigationLayout(for: proxy.size.width) }
+            .onChange(of: proxy.size.width) { _, newValue in updateNavigationLayout(for: newValue) }
+            .onChange(of: verticalSizeClass) { _, _ in applyPreferredColumnVisibility() }
+        }
+    }
+
+    #if os(iOS)
+    private var iPhoneNavigationContent: some View {
+        NavigationStack {
+            detailView()
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            showIPhoneSidebar = true
+                        } label: {
+                            Image(systemName: "line.3.horizontal")
+                                .font(.body.weight(.medium))
+                        }
+                    }
+                }
+        }
+        .sheet(isPresented: $showIPhoneSidebar) {
+            NavigationStack {
+                sidebarContent
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            HStack(spacing: 16) {
+                                Button {
+                                    newFeedURL = ""
+                                    addError = nil
+                                    showIPhoneSidebar = false
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                        showAddSheet = true
+                                    }
+                                } label: {
+                                    Image(systemName: "plus")
+                                }
+                                Button {
+                                    feedService.addFolder(name: "Nouveau dossier")
+                                } label: {
+                                    Image(systemName: "folder.badge.plus")
+                                }
+                                Button {
+                                    showIPhoneSidebar = false
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                        showSettings = true
+                                    }
+                                } label: {
+                                    Image(systemName: "gearshape")
+                                }
+                            }
+                        }
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("OK") {
+                                showIPhoneSidebar = false
+                            }
+                            .bold()
+                        }
+                    }
+                    .navigationTitle("Flux")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+    }
+    #endif
+
+    private var navigationSplitViewContent: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebarContent
+                .navigationSplitViewColumnWidth(min: 275, ideal: max(sidebarWidth, 275), max: 420)
         } detail: {
             detailView()
         }
@@ -157,36 +388,38 @@ struct AppSidebar: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         #if os(macOS)
         .modifier(WindowTitleModifier(title: dynamicTitle))
-        #endif
         .background(Color.clear)
-        #if os(macOS)
         .toolbarBackground(.hidden, for: .windowToolbar)
-        .toolbarBackground(Color.clear, for: .windowToolbar)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .toolbarColorScheme(colorScheme, for: .windowToolbar)
+        .toolbar(removing: .sidebarToggle)
+        #else
+        .background(Color.clear)
         #endif
-        .onAppear {
-            if verticalSizeClass == .regular {
-                columnVisibility = .all
-            }
-        }
-        .onChange(of: verticalSizeClass) { _, newValue in
-            withAnimation(.linear(duration: 0.2)) {
-                columnVisibility = .all
-            }
-        }
     }
     
     private var addFeedSheetContent: some View {
         AddFeedSheet(newFeedURL: $newFeedURL, addError: $addError) { url in
             do {
-                try await feedService.addFeed(from: url.absoluteString)
-                await MainActor.run { showAddSheet = false }
+                let addedFeed = try await feedService.addFeed(from: url.absoluteString)
+                await MainActor.run {
+                    showAddSheet = false
+                    focusFeed(addedFeed.id)
+                    newFeedURL = ""
+                    addError = nil
+                }
             } catch let e as LocalizedError {
                 await MainActor.run { addError = e.errorDescription ?? e.localizedDescription }
             } catch {
                 await MainActor.run { addError = "Erreur inconnue" }
             }
         }
-        .frame(width: 420)
+        .frame(width: 860, height: 840, alignment: .topLeading)
+        #if os(macOS)
+        .toolbarVisibility(.hidden, for: .windowToolbar)
+        .toolbarBackground(.hidden, for: .windowToolbar)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        #endif
     }
     
     private var settingsSheetBinding: Binding<Bool> {
@@ -202,7 +435,7 @@ struct AppSidebar: View {
     private var settingsSheetContent: some View {
         AISettingsInlineSheet(isPresented: $showSettings, showOnboarding: $showOnboarding)
             .environment(feedService)
-            .frame(width: 440)
+            .frame(width: 560)
     }
     
     @ViewBuilder
@@ -239,33 +472,301 @@ struct AppSidebar: View {
     }
 
     private func handleToggleSidebar() {
-        withAnimation(.linear(duration: 0.2)) {
-            columnVisibility = columnVisibility == .all ? .detailOnly : .all
-        }
+        columnVisibility = columnVisibility == .all ? .detailOnly : .all
     }
 
     private func handleCollapseSidebar() {
-        withAnimation(.linear(duration: 0.2)) {
-            #if os(macOS)
-            columnVisibility = .detailOnly
-            #else
-            if verticalSizeClass != .regular {
-                columnVisibility = .detailOnly
-            }
-            #endif
-        }
+        #if os(macOS)
+        columnVisibility = .detailOnly
+        #else
+        columnVisibility = .detailOnly
+        #endif
     }
 
     private func handleExpandSidebar() {
-        withAnimation(.linear(duration: 0.2)) {
-            #if os(macOS)
-            columnVisibility = .all
-            #else
-            if verticalSizeClass != .regular {
-                columnVisibility = .all
+        #if os(macOS)
+        columnVisibility = .all
+        #else
+        columnVisibility = .all
+        #endif
+    }
+
+    private func updateNavigationLayout(for width: CGFloat) {
+        guard width > 0 else { return }
+        let previousPrefersOverlay = prefersOverlaySidebarOnIPad
+        mainNavigationWidth = width
+        #if os(iOS)
+        if isIPhoneDevice {
+            if columnVisibility != .detailOnly {
+                applyPreferredColumnVisibility()
             }
-            #endif
+        } else {
+            let currentPrefersOverlay = prefersOverlaySidebarOnIPad
+            if currentPrefersOverlay != previousPrefersOverlay {
+                applyPreferredColumnVisibility()
+            } else if columnVisibility != .all && columnVisibility != .detailOnly {
+                applyPreferredColumnVisibility()
+            }
         }
+        #endif
+    }
+
+    private func applyPreferredColumnVisibility() {
+        #if os(macOS)
+        columnVisibility = .all
+        #else
+        columnVisibility = (isIPhoneDevice || prefersOverlaySidebarOnIPad) ? .detailOnly : .all
+        #endif
+    }
+
+    private func handleOpenSettings() {
+        showSettings = true
+    }
+
+    #if os(macOS)
+    private func maybePresentSafariExtensionAnnouncementIfNeeded() {
+        guard showOnboarding == false else { return }
+        guard safariExtensionAnnouncementToken != SafariExtensionSupport.announcementToken else { return }
+        safariExtensionAnnouncementToken = SafariExtensionSupport.announcementToken
+
+        SafariExtensionSupport.refreshStatus { state in
+            guard showSettings == false, showAddSheet == false else { return }
+            if case .enabled = state { return }
+            showSafariExtensionAnnouncement = true
+        }
+    }
+    #endif
+
+    private func consumePendingDeepLinkIfNeeded() {
+        while let incomingURL = deepLinkRouter.consume() {
+            handleIncomingURL(incomingURL)
+        }
+    }
+
+    private func handleIncomingURL(_ incomingURL: URL) {
+        if handleNotesWidgetDeepLinkIfNeeded(incomingURL) {
+            return
+        }
+
+        if let browserURL = parseBrowserDeepLink(from: incomingURL) {
+            openInDefaultBrowser(browserURL)
+            return
+        }
+
+        if let request = parseAddFeedDeepLink(from: incomingURL) {
+            handleAddFeedDeepLink(request)
+            return
+        }
+
+        if let request = parseArticleDeepLink(from: incomingURL) {
+            selectedFolderId = nil
+            selectedFeedId = Self.allFeedsId
+            deepLinkArticleRequest = request
+            return
+        }
+
+        guard let scheme = incomingURL.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return }
+        openInDefaultBrowser(incomingURL)
+    }
+
+    private func handleNotesWidgetDeepLinkIfNeeded(_ incomingURL: URL) -> Bool {
+        guard incomingURL.scheme?.lowercased() == "flux" else { return false }
+        guard incomingURL.host?.lowercased() == "notes" else { return false }
+        guard let components = URLComponents(url: incomingURL, resolvingAgainstBaseURL: false) else { return false }
+
+        if components.queryItems?.first(where: { $0.name == "copy" }) != nil {
+            copySelectedWidgetNoteToClipboard()
+            return true
+        }
+
+        let deltaString = components.queryItems?.first(where: { $0.name == "delta" })?.value
+        let delta = Int(deltaString ?? "") ?? 0
+        guard delta != 0 else { return true }
+
+        let total = max(1, feedService.readerNotes.count)
+        let defaults = UserDefaults(suiteName: "group.com.adriendonot.fluxapp")
+        let key = "notesWidget.selectedIndex"
+        let current = defaults?.integer(forKey: key) ?? 0
+        let next = (current + delta) % total
+        let wrapped = next < 0 ? (next + total) : next
+        defaults?.set(wrapped, forKey: key)
+
+        #if canImport(WidgetKit)
+        WidgetCenter.shared.reloadTimelines(ofKind: "NotesWidgetV2")
+        WidgetCenter.shared.reloadTimelines(ofKind: "NotesWidgetV3")
+        #endif
+        return true
+    }
+
+    private func copySelectedWidgetNoteToClipboard() {
+        let defaults = UserDefaults(suiteName: "group.com.adriendonot.fluxapp")
+        let key = "notesWidget.selectedIndex"
+        let idx = defaults?.integer(forKey: key) ?? 0
+
+        let sortedNotes = feedService.readerNotes.sorted { $0.createdAt > $1.createdAt }
+        guard sortedNotes.isEmpty == false else { return }
+        let normalized = ((idx % sortedNotes.count) + sortedNotes.count) % sortedNotes.count
+        let text = sortedNotes[normalized].selectedText
+
+        #if os(macOS)
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+        #elseif canImport(UIKit)
+        UIPasteboard.general.string = text
+        #endif
+    }
+
+    private func openInDefaultBrowser(_ url: URL) {
+        #if os(macOS)
+        NSWorkspace.shared.open(url)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            NSApp.hide(nil)
+        }
+        #elseif canImport(UIKit)
+        UIApplication.shared.open(url)
+        #endif
+    }
+
+    private func parseArticleDeepLink(from incomingURL: URL) -> ArticleOpenRequest? {
+        guard incomingURL.scheme?.lowercased() == "flux" else { return nil }
+        guard incomingURL.host?.lowercased() == "article" else { return nil }
+        guard let components = URLComponents(url: incomingURL, resolvingAgainstBaseURL: false) else { return nil }
+
+        let articleURLString = components.queryItems?.first(where: { $0.name == "url" })?.value
+        guard
+            let articleURLString,
+            let articleURL = URL(string: articleURLString),
+            let scheme = articleURL.scheme?.lowercased(),
+            scheme == "http" || scheme == "https"
+        else {
+            return nil
+        }
+
+        let readerValue = components.queryItems?.first(where: { $0.name == "reader" })?.value?.lowercased()
+        let forceReaderFirst = !(readerValue == "0" || readerValue == "false")
+
+        return ArticleOpenRequest(url: articleURL, forceReaderFirst: forceReaderFirst)
+    }
+
+    private func parseBrowserDeepLink(from incomingURL: URL) -> URL? {
+        guard incomingURL.scheme?.lowercased() == "flux" else { return nil }
+        guard incomingURL.host?.lowercased() == "open" else { return nil }
+        guard let components = URLComponents(url: incomingURL, resolvingAgainstBaseURL: false) else { return nil }
+
+        let urlValue = components.queryItems?.first(where: { $0.name == "url" })?.value
+        guard
+            let urlValue,
+            let url = URL(string: urlValue),
+            let scheme = url.scheme?.lowercased(),
+            scheme == "http" || scheme == "https"
+        else {
+            return nil
+        }
+
+        return url
+    }
+
+    private func parseAddFeedDeepLink(from incomingURL: URL) -> AddFeedDeepLinkRequest? {
+        guard incomingURL.scheme?.lowercased() == "flux" else { return nil }
+        guard incomingURL.host?.lowercased() == "add-feed" else { return nil }
+        guard let components = URLComponents(url: incomingURL, resolvingAgainstBaseURL: false) else { return nil }
+
+        func parsedWebURL(named name: String) -> URL? {
+            guard
+                let value = components.queryItems?.first(where: { $0.name == name })?.value,
+                let url = URL(string: value),
+                let scheme = url.scheme?.lowercased(),
+                scheme == "http" || scheme == "https"
+            else {
+                return nil
+            }
+            return url
+        }
+
+        let feedURL = parsedWebURL(named: "feed")
+        let siteURL = parsedWebURL(named: "url") ?? parsedWebURL(named: "site")
+        guard let preferredURL = feedURL ?? siteURL else { return nil }
+        return AddFeedDeepLinkRequest(preferredURL: preferredURL, fallbackSiteURL: siteURL)
+    }
+
+    private func handleAddFeedDeepLink(_ request: AddFeedDeepLinkRequest) {
+        addError = nil
+        newFeedURL = request.preferredURL.absoluteString
+
+        if let existingFeed = existingFeedMatching(urls: [request.preferredURL, request.fallbackSiteURL].compactMap { $0 }) {
+            focusFeed(existingFeed.id)
+            return
+        }
+
+        Task {
+            do {
+                let addedFeed = try await feedService.addFeed(from: request.preferredURL.absoluteString)
+                await MainActor.run {
+                    addError = nil
+                    showAddSheet = false
+                    focusFeed(addedFeed.id)
+                }
+            } catch FeedService.FeedError.duplicate {
+                await MainActor.run {
+                    if let existingFeed = existingFeedMatching(urls: [request.preferredURL, request.fallbackSiteURL].compactMap { $0 }) {
+                        addError = nil
+                        showAddSheet = false
+                        focusFeed(existingFeed.id)
+                    } else {
+                        addError = FeedService.FeedError.duplicate.errorDescription
+                        showAddSheet = true
+                    }
+                }
+            } catch let error as LocalizedError {
+                await MainActor.run {
+                    addError = error.errorDescription ?? error.localizedDescription
+                    newFeedURL = (request.fallbackSiteURL ?? request.preferredURL).absoluteString
+                    showAddSheet = true
+                }
+            } catch {
+                await MainActor.run {
+                    addError = error.localizedDescription
+                    newFeedURL = (request.fallbackSiteURL ?? request.preferredURL).absoluteString
+                    showAddSheet = true
+                }
+            }
+        }
+    }
+
+    private func focusFeed(_ feedId: UUID) {
+        selectedFolderId = nil
+        selectedFeedId = feedId
+        #if os(iOS)
+        columnVisibility = prefersOverlaySidebarOnIPad ? .detailOnly : .all
+        #else
+        columnVisibility = .all
+        #endif
+    }
+
+    private func existingFeedMatching(urls: [URL]) -> Feed? {
+        let normalizedTargets = Set(urls.map(normalizedFeedKey))
+        guard normalizedTargets.isEmpty == false else { return nil }
+
+        return feedService.feeds.first { feed in
+            normalizedTargets.contains(normalizedFeedKey(feed.feedURL))
+            || normalizedTargets.contains(normalizedFeedKey(feed.siteURL))
+        }
+    }
+
+    private func normalizedFeedKey(_ url: URL?) -> String {
+        guard let url else { return "" }
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let normalizedScheme = components?.scheme?.lowercased()
+        let normalizedHost = components?.host?.lowercased()
+        components?.scheme = normalizedScheme
+        components?.host = normalizedHost
+        let normalizedURL = components?.url ?? url
+        var value = normalizedURL.absoluteString
+        while value.hasSuffix("/") && value.count > "https://a".count {
+            value.removeLast()
+        }
+        return value
     }
     
     // MARK: - Propriétés calculées
@@ -281,10 +782,18 @@ struct AppSidebar: View {
         return feeds
     }
     
+    private var musicFeeds: [Feed] {
+        feedService.feeds.filter { f in
+            feedService.isMusicFeedURL(f.feedURL) || feedService.isMusicFeedURL(f.siteURL ?? f.feedURL)
+        }
+    }
+
     private var otherFeeds: [Feed] {
         feedService.feeds.filter { f in
             let h = (f.siteURL?.host ?? f.feedURL.host ?? "").lowercased()
-            return !(h.contains("youtube.com") || h.contains("youtu.be")) && f.folderId == nil
+            let isYouTube = h.contains("youtube.com") || h.contains("youtu.be")
+            let isMusic = feedService.isMusicFeedURL(f.feedURL) || feedService.isMusicFeedURL(f.siteURL ?? f.feedURL)
+            return !isYouTube && !isMusic && f.folderId == nil
         }
     }
     
@@ -297,13 +806,18 @@ struct AppSidebar: View {
         }
     }
     
+    @State private var cachedFolderUnreadCounts: [UUID: Int] = [:]
+
     private func unreadCount(in folder: Folder) -> Int {
         // Le trigger force le recalcul quand les articles sont marqués comme lus
         _ = feedService.badgeUpdateTrigger
+        // Pendant le refresh global, garder le compteur gelé pour éviter les pics
+        guard !feedService.isRefreshing else { return cachedFolderUnreadCounts[folder.id] ?? 0 }
         let ids = Set(feeds(in: folder).map { $0.id })
-        return feedService.articles.reduce(0) { partial, article in
+        let count = feedService.articles.reduce(0) { partial, article in
             partial + ((ids.contains(article.feedId) && article.isRead == false) ? 1 : 0)
         }
+        return count
     }
     
     private func toggleFolder(_ folderId: UUID) {
@@ -355,6 +869,7 @@ struct AppSidebar: View {
         List {
             todaySection
             foldersSection
+            musicSection
             youtubeSection
             otherFeedsSection
         }
@@ -363,6 +878,19 @@ struct AppSidebar: View {
         .scrollContentBackground(.hidden)
         .background(Color.clear)
         .listRowBackground(Color.clear)
+        .background(
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { sidebarMeasuredWidth = proxy.size.width }
+                    .onChange(of: proxy.size.width) { _, newValue in
+                        sidebarMeasuredWidth = newValue
+                    }
+            }
+        )
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            MusicMiniPlayer()
+                .animation(.easeInOut(duration: 0.25), value: MusicKitService.shared.isActive || MusicKitService.shared.isLoading)
+        }
         .navigationTitle("")
         .onChange(of: selectedFeedId) { _, newValue in
             if let fid = newValue, fid != Self.allFeedsId && fid != Self.favoritesId {
@@ -370,10 +898,30 @@ struct AppSidebar: View {
             }
             NotificationCenter.default.post(name: .closeWebViewOverlay, object: nil)
             if newValue != nil { selectedFolderId = nil }
+            #if os(iOS)
+            if newValue != nil && isIPhoneDevice {
+                showIPhoneSidebar = false
+            } else if newValue != nil && prefersOverlaySidebarOnIPad {
+                columnVisibility = .detailOnly
+            }
+            #endif
+        }
+        .onChange(of: selectedFolderId) { _, newValue in
+            #if os(iOS)
+            if newValue != nil && isIPhoneDevice {
+                showIPhoneSidebar = false
+            } else if newValue != nil && prefersOverlaySidebarOnIPad {
+                columnVisibility = .detailOnly
+            }
+            #endif
         }
         .toolbar {
             sidebarToolbar
         }
+        #if os(macOS)
+        .toolbarBackground(.hidden, for: .windowToolbar)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        #endif
     }
     
     // Section "Aujourd'hui"
@@ -382,25 +930,23 @@ struct AppSidebar: View {
         Section {
             HStack(spacing: 8) {
                 Image(systemName: "square.grid.2x2")
-                Text(LocalizationManager.shared.localizedString(.newsWall))
-                    .opacity(sidebarItemTextOpacity)
+                ipadSectionTitleText(LocalizationManager.shared.localizedString(.newsWall))
                 Spacer()
                 if feedService.isRefreshing && feedService.refreshingFeedId == nil {
                     ProgressView().controlSize(.small)
                 }
             }
             .contentShape(Rectangle())
+            .sidebarSelectableRow(isSelected: selectedFeedId == Self.allFeedsId)
             .onTapGesture {
                 selectedFeedId = Self.allFeedsId
                 selectedFolderId = nil
             }
-            .listRowBackground(selectedFeedId == Self.allFeedsId ? Color.accentColor.opacity(0.15) : Color.clear)
             
             HStack(spacing: 8) {
                 Image(systemName: "clock.fill")
                     .foregroundStyle(.orange)
-                Text(LocalizationManager.shared.localizedString(.myFavorites))
-                    .opacity(sidebarItemTextOpacity)
+                ipadSectionTitleText(LocalizationManager.shared.localizedString(.myFavorites))
                 Spacer()
                 if feedService.favoriteArticlesCount > 0 {
                     Text("\(feedService.favoriteArticlesCount)")
@@ -418,52 +964,111 @@ struct AppSidebar: View {
                 }
             }
             .contentShape(Rectangle())
+            .sidebarSelectableRow(isSelected: selectedFeedId == Self.favoritesId)
             .onTapGesture {
                 selectedFeedId = Self.favoritesId
                 selectedFolderId = nil
             }
-            .listRowBackground(selectedFeedId == Self.favoritesId ? Color.accentColor.opacity(0.15) : Color.clear)
 
-            HStack(spacing: 8) {
-                Image(systemName: "newspaper")
-                    .foregroundStyle(.blue)
-                Text(lm.localizedString(.newsletterTitle))
-                    .opacity(sidebarItemTextOpacity)
-                Text(lm.localizedString(.beta))
-                    .font(.system(size: 9, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary.opacity(0.6))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(
-                        Capsule()
-                            .fill(.secondary.opacity(0.15))
-                    )
-                    .opacity(sidebarItemTextOpacity)
-                Spacer()
-                if feedService.isGeneratingNewsletter {
-                    ProgressView().controlSize(.small)
-                }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                selectedFeedId = Self.newsletterId
-                selectedFolderId = nil
-            }
-            .listRowBackground(selectedFeedId == Self.newsletterId ? Color.accentColor.opacity(0.15) : Color.clear)
             
             HStack(spacing: 8) {
                 Image(systemName: "text.bubble.fill")
                     .foregroundStyle(.teal)
-                Text(lm.localizedString(.newsletterFeed))
-                    .opacity(sidebarItemTextOpacity)
+                ipadSectionTitleText(lm.localizedString(.newsletterFeed))
                 Spacer()
             }
             .contentShape(Rectangle())
+            .sidebarSelectableRow(isSelected: selectedFeedId == Self.feedTimelineId)
             .onTapGesture {
                 selectedFeedId = Self.feedTimelineId
                 selectedFolderId = nil
             }
-            .listRowBackground(selectedFeedId == Self.feedTimelineId ? Color.accentColor.opacity(0.15) : Color.clear)
+
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(.purple)
+                ipadSectionTitleText(lm.localizedString(.discoveryTitle))
+                Spacer()
+            }
+            .contentShape(Rectangle())
+            .sidebarSelectableRow(isSelected: selectedFeedId == Self.discoveryId)
+            .onTapGesture {
+                selectedFeedId = Self.discoveryId
+                selectedFolderId = nil
+            }
+
+
+            HStack(spacing: 8) {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .foregroundStyle(.mint)
+                ipadSectionTitleText(lm.localizedString(.signals))
+                Spacer()
+            }
+            .contentShape(Rectangle())
+            .sidebarSelectableRow(isSelected: selectedFeedId == Self.signauxId)
+            .onTapGesture {
+                selectedFeedId = Self.signauxId
+                selectedFolderId = nil
+            }
+
+            #if os(iOS)
+            if UIDevice.current.userInterfaceIdiom != .pad {
+                HStack(spacing: 8) {
+                    Image(systemName: "note.text")
+                        .foregroundStyle(.indigo)
+                    ipadSectionTitleText(notesSectionTitle)
+                    Spacer()
+                    if feedService.readerNotesCount > 0 {
+                        Text("\(feedService.readerNotesCount)")
+                            .font(.caption2).bold()
+                            .padding(.vertical, 2)
+                            .padding(.horizontal, 6)
+                            .background(Capsule().fill(Color.indigo.opacity(0.15)))
+                            .foregroundStyle(.indigo)
+                            .opacity(sidebarItemTextOpacity)
+                    } else {
+                        Text("0")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .opacity(sidebarItemTextOpacity)
+                    }
+                }
+                .contentShape(Rectangle())
+                .sidebarSelectableRow(isSelected: selectedFeedId == Self.notesId)
+                .onTapGesture {
+                    selectedFeedId = Self.notesId
+                    selectedFolderId = nil
+                }
+            }
+            #else
+            HStack(spacing: 8) {
+                Image(systemName: "note.text")
+                    .foregroundStyle(.indigo)
+                ipadSectionTitleText(notesSectionTitle)
+                Spacer()
+                if feedService.readerNotesCount > 0 {
+                    Text("\(feedService.readerNotesCount)")
+                        .font(.caption2).bold()
+                        .padding(.vertical, 2)
+                        .padding(.horizontal, 6)
+                        .background(Capsule().fill(Color.indigo.opacity(0.15)))
+                        .foregroundStyle(.indigo)
+                        .opacity(sidebarItemTextOpacity)
+                } else {
+                    Text("0")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .opacity(sidebarItemTextOpacity)
+                }
+            }
+            .contentShape(Rectangle())
+            .sidebarSelectableRow(isSelected: selectedFeedId == Self.notesId)
+            .onTapGesture {
+                selectedFeedId = Self.notesId
+                selectedFolderId = nil
+            }
+            #endif
+
         } header: {
             Text(lm.localizedString(.today))
                 .opacity(sidebarItemTextOpacity)
@@ -488,7 +1093,34 @@ struct AppSidebar: View {
         }
     }
     
-    // Section YouTube
+    // Section Music (Apple Music / iTunes)
+    @ViewBuilder
+    private var musicSection: some View {
+        let feeds = musicFeeds
+        if !feeds.isEmpty {
+            Section {
+                ForEach(collapseMusic ? [] : feeds, id: \.id) { feed in
+                    FeedRow(feed: feed, selectedFeedId: $selectedFeedId) {
+                        deleteFeed($0)
+                    }
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .sidebarSelectableRow(isSelected: selectedFeedId == feed.id)
+                }
+            } header: {
+                Button(action: { withAnimation(.linear(duration: 0.15)) { collapseMusic.toggle() } }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: collapseMusic ? "chevron.right" : "chevron.down")
+                        Text(LocalizationManager.shared.localizedString(.music))
+                            .opacity(sidebarItemTextOpacity)
+                        Spacer()
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
     @ViewBuilder
     private var youtubeSection: some View {
         let feeds = youtubeFeeds
@@ -517,7 +1149,7 @@ struct AppSidebar: View {
                     ) { indices, newOffset in
                         feedService.reorderYouTubeFeeds(fromOffsets: indices, toOffset: newOffset)
                     }
-                    .listRowBackground(selectedFeedId == feed.id ? Color.accentColor.opacity(0.15) : Color.clear)
+                    .sidebarSelectableRow(isSelected: selectedFeedId == feed.id)
                 }
                 .onMove(perform: { indices, newOffset in
                     feedService.reorderYouTubeFeeds(fromOffsets: indices, toOffset: newOffset)
@@ -561,7 +1193,7 @@ struct AppSidebar: View {
                 ) { indices, newOffset in
                     feedService.reorderNonYouTubeFeeds(fromOffsets: indices, toOffset: newOffset)
                 }
-                .listRowBackground(selectedFeedId == feed.id ? Color.accentColor.opacity(0.15) : Color.clear)
+                .sidebarSelectableRow(isSelected: selectedFeedId == feed.id)
             }
             .onMove(perform: { indices, newOffset in
                 feedService.reorderNonYouTubeFeeds(fromOffsets: indices, toOffset: newOffset)
@@ -591,30 +1223,27 @@ struct AppSidebar: View {
     // Toolbar de la sidebar
     private var sidebarToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .automatic) {
-            Button(action: {
-                newFeedURL = ""
-                addError = nil
-                showAddSheet = true
-            }, label: {
-                Image(systemName: "plus")
-            })
-            .help(LocalizationManager.shared.localizedString(.addFeed))
-            
-            Button(action: { feedService.addFolder(name: "Nouveau dossier") }) {
-                Image(systemName: "folder.badge.plus")
+            if !isSidebarCollapsedRail {
+                Button(action: {
+                    newFeedURL = ""
+                    addError = nil
+                    showAddSheet = true
+                }, label: {
+                    Image(systemName: "plus")
+                })
+                .help(LocalizationManager.shared.localizedString(.addFeed))
+
+                Button(action: { feedService.addFolder(name: "Nouveau dossier") }) {
+                    Image(systemName: "folder.badge.plus")
+                }
+                .help(LocalizationManager.shared.localizedString(.addFolder))
             }
-            .help(LocalizationManager.shared.localizedString(.addFolder))
             
             Button(action: { showSettings = true }) {
                 Image(systemName: "gearshape")
             }
             .help(LocalizationManager.shared.localizedString(.aiSettings))
         }
-    }
-    
-    // Toolbar de la vue détail
-    private var detailToolbar: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) { }
     }
     
     // MARK: - Vue détail
@@ -649,17 +1278,15 @@ struct AppSidebar: View {
                 Spacer(minLength: 8)
                 let countUnread = unreadCount(in: folder)
                 if countUnread > 0 {
-                    Text("\(countUnread)")
-                        .font(.caption2).bold()
-                        .padding(.vertical, 2)
-                        .padding(.horizontal, 6)
-                        .background(Capsule().fill(Color.black.opacity(0.10)))
-                        .opacity(sidebarItemTextOpacity)
+                    Circle()
+                        .fill(.blue)
+                        .frame(width: 7, height: 7)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 2)
             .contentShape(Rectangle())
+            .sidebarSelectableRow(isSelected: selectedFolderId == folder.id)
             .onTapGesture {
                 selectedFolderId = folder.id
                 selectedFeedId = nil
@@ -676,7 +1303,6 @@ struct AppSidebar: View {
                 withAnimation(.linear(duration: 0.15)) { expandedFolders.insert(folder.id) }
                 return true
             }
-            .listRowBackground(selectedFolderId == folder.id ? Color.accentColor.opacity(0.15) : Color.clear)
 
             // Lignes des flux dans le dossier
             if expandedFolders.contains(folder.id) || renamingFolderId == folder.id {
@@ -702,7 +1328,7 @@ struct AppSidebar: View {
                     ) { indices, newOffset in
                         feedService.reorderFeeds(inFolder: folder.id, fromOffsets: indices, toOffset: newOffset)
                     }
-                    .listRowBackground(selectedFeedId == feed.id ? Color.accentColor.opacity(0.15) : Color.clear)
+                    .sidebarSelectableRow(isSelected: selectedFeedId == feed.id)
                 }
                 .onMove(perform: { indices, newOffset in
                     feedService.reorderFeeds(inFolder: folder.id, fromOffsets: indices, toOffset: newOffset)
@@ -716,38 +1342,75 @@ struct AppSidebar: View {
         VStack(spacing: 0) {
             webViewControls
             if let selectedFolderId {
-                ArticlesView(feedId: nil, folderId: selectedFolderId)
+                articleDetailView(feedId: nil, folderId: selectedFolderId)
             } else if let selectedFeedId {
                 if selectedFeedId == Self.favoritesId {
-                    ArticlesView(feedId: nil, showOnlyFavorites: true)
+                    articleDetailView(feedId: nil, showOnlyFavorites: true)
                 } else if selectedFeedId == Self.feedTimelineId {
                     FeedTimelineView()
-                } else if selectedFeedId == Self.newsletterId {
-                    NewsletterView()
+                } else if selectedFeedId == Self.discoveryId {
+                    DiscoveryView()
+                } else if selectedFeedId == Self.signauxId {
+                    SignauxView()
+                } else if selectedFeedId == Self.notesId {
+                    NotesView()
                 } else if selectedFeedId != Self.allFeedsId {
-                    ArticlesView(feedId: selectedFeedId)
+                    articleDetailView(feedId: selectedFeedId)
                 } else {
-                    ArticlesView()
+                    articleDetailView()
                 }
             } else {
                 // Fallback: afficher le mur et corriger la sélection
-                ArticlesView()
+                articleDetailView()
                     .onAppear {
                         if selectedFeedId == nil && selectedFolderId == nil {
                             selectedFeedId = Self.allFeedsId
                         }
-                    }
+                }
             }
         }
-        .toolbar {
-            detailToolbar
-        }
+        #if os(macOS)
+        .toolbarBackground(.hidden, for: .windowToolbar)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .toolbarColorScheme(colorScheme, for: .windowToolbar)
+        #endif
         .overlay(alignment: .bottom) {
             AudioGlassPill()
                 .environment(feedService)
                 .padding(.horizontal, 20)
                 .padding(.bottom, 12)
         }
+    }
+
+    @ViewBuilder
+    private func articleDetailView(
+        feedId: UUID? = nil,
+        folderId: UUID? = nil,
+        showOnlyFavorites: Bool = false
+    ) -> some View {
+        let content = ArticlesView(
+            feedId: feedId,
+            folderId: folderId,
+            showOnlyFavorites: showOnlyFavorites,
+            deepLinkRequest: $deepLinkArticleRequest
+        )
+
+        #if os(iOS)
+        content.id(articleDetailIdentity(feedId: feedId, folderId: folderId, showOnlyFavorites: showOnlyFavorites))
+        #else
+        content
+        #endif
+    }
+
+    private func articleDetailIdentity(
+        feedId: UUID?,
+        folderId: UUID?,
+        showOnlyFavorites: Bool
+    ) -> String {
+        let feedPart = feedId?.uuidString ?? "all-feeds"
+        let folderPart = folderId?.uuidString ?? "no-folder"
+        let favoritesPart = showOnlyFavorites ? "favorites" : "regular"
+        return "ipad-articles-\(feedPart)-\(folderPart)-\(favoritesPart)"
     }
     
     @ViewBuilder
@@ -764,6 +1427,33 @@ struct AppSidebar: View {
         }
     }
 
+}
+
+private extension View {
+    @ViewBuilder
+    func sidebarSelectableRow(isSelected: Bool, horizontalPadding: CGFloat = 14) -> some View {
+        #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            self
+                .frame(minHeight: 42, alignment: .leading)
+                .padding(.horizontal, horizontalPadding)
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                .background {
+                    if isSelected {
+                        Color.accentColor.opacity(0.15)
+                            .padding(.horizontal, -horizontalPadding)
+                    }
+                }
+        } else {
+            self
+                .listRowBackground(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
+        }
+        #else
+        self
+            .listRowBackground(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
+        #endif
+    }
 }
 
 private struct AudioMiniPlayerFooter: View {
@@ -855,6 +1545,257 @@ private struct AudioMiniPlayerFooter: View {
         let h = total / 3600
         if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
         return String(format: "%d:%02d", m, s)
+    }
+}
+
+// MARK: - Music Mini Player (sidebar footer)
+
+private struct MusicMiniPlayer: View {
+    private var music: MusicKitService { MusicKitService.shared }
+    @State private var isExpanded = false
+
+    var body: some View {
+        if music.isActive || music.isLoading {
+            Group {
+                if isExpanded {
+                    expandedPlayer
+                } else {
+                    compactPlayer
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(.ultraThinMaterial)
+            .overlay(alignment: .top) {
+                Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 0.5)
+            }
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .animation(.easeInOut(duration: 0.25), value: isExpanded)
+            .onChange(of: music.isActive) { _, isActive in
+                if !isActive {
+                    isExpanded = false
+                }
+            }
+        }
+    }
+
+    private var compactPlayer: some View {
+        HStack(alignment: .center, spacing: 10) {
+            artworkButton
+
+            trackInfo(lineLimit: 1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            playbackControls()
+        }
+    }
+
+    private var expandedPlayer: some View {
+        artworkView
+            .overlay(alignment: .bottomLeading) {
+                ZStack(alignment: .bottomLeading) {
+                    LinearGradient(
+                        colors: [
+                            Color.black.opacity(0.00),
+                            Color.black.opacity(0.18),
+                            Color.black.opacity(0.72)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .allowsHitTesting(false)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        trackInfo(lineLimit: 2, isOverlay: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        HStack(alignment: .bottom) {
+                            playbackControls(isOverlay: true)
+                            Spacer()
+                            if music.isPlaying {
+                                MusicEqualizerBars(color: .white)
+                            }
+                        }
+                    }
+                    .padding(14)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        isExpanded = false
+                    }
+                } label: {
+                    Image(systemName: "chevron.down.circle.fill")
+                        .font(.system(size: 22, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.92))
+                        .shadow(color: .black.opacity(0.25), radius: 8, x: 0, y: 2)
+                        .padding(10)
+                }
+                .buttonStyle(.plain)
+            }
+    }
+
+    private var artworkButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                isExpanded.toggle()
+            }
+        } label: {
+            artworkView
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var artworkView: some View {
+        let cornerRadius: CGFloat = isExpanded ? 10 : 8
+        let shadowColor = Color.black.opacity(isExpanded ? 0.18 : 0.10)
+        let shadowRadius: CGFloat = isExpanded ? 14 : 5
+        let shadowYOffset: CGFloat = isExpanded ? 6 : 2
+
+        return Group {
+        if let artworkURL = music.currentArtworkURL {
+            AsyncImage(url: artworkURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                default:
+                    artworkPlaceholder
+                }
+            }
+        } else {
+            artworkPlaceholder
+        }
+        }
+        .frame(maxWidth: isExpanded ? .infinity : nil)
+        .aspectRatio(1, contentMode: .fit)
+        .frame(width: isExpanded ? nil : 40, height: isExpanded ? nil : 40)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .shadow(color: shadowColor, radius: shadowRadius, x: 0, y: shadowYOffset)
+        .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .id(music.currentArtworkURL?.absoluteString ?? "artwork-placeholder")
+    }
+
+    private func trackInfo(lineLimit: Int, isOverlay: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: isExpanded ? 4 : 2) {
+            Text(music.currentTrackTitle ?? "Apple Music")
+                .font(.callout.weight(.medium))
+                .foregroundStyle(isOverlay ? Color.white : Color.primary)
+                .lineLimit(lineLimit)
+
+            if let artist = music.currentTrackArtist, !artist.isEmpty {
+                Text(artist)
+                    .font(.caption)
+                    .foregroundStyle(isOverlay ? Color.white.opacity(0.78) : Color.secondary)
+                    .lineLimit(lineLimit)
+            }
+        }
+        .shadow(color: isOverlay ? Color.black.opacity(0.30) : .clear, radius: 10, x: 0, y: 2)
+    }
+
+    private func playbackControls(isOverlay: Bool = false) -> some View {
+        HStack(spacing: 4) {
+            Button {
+                Task { await MusicKitService.shared.skipToNext() }
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(controlFillStyle(isOverlay: isOverlay, overlayOpacity: 0.32))
+                        .frame(width: 26, height: 26)
+                        .overlay(Circle().stroke(Color.white.opacity(0.20), lineWidth: 0.5))
+                    Image(systemName: "backward.fill")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(controlIconColor(isOverlay: isOverlay))
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(!music.hasQueue || music.isLoading)
+            .opacity((!music.hasQueue || music.isLoading) ? 0.45 : 1)
+
+            Button {
+                Task { @MainActor in
+                    MusicKitService.shared.togglePlayPause()
+                }
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(controlFillStyle(isOverlay: isOverlay, overlayOpacity: 0.40))
+                        .frame(width: 30, height: 30)
+                        .overlay(Circle().stroke(Color.white.opacity(0.20), lineWidth: 0.5))
+                    if music.isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(controlIconColor(isOverlay: isOverlay))
+                    } else {
+                        Image(systemName: music.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(controlIconColor(isOverlay: isOverlay))
+                            .offset(x: music.isPlaying ? 0 : 1)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                Task { await MusicKitService.shared.skipToPrevious() }
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(controlFillStyle(isOverlay: isOverlay, overlayOpacity: 0.32))
+                        .frame(width: 26, height: 26)
+                        .overlay(Circle().stroke(Color.white.opacity(0.20), lineWidth: 0.5))
+                    Image(systemName: "forward.fill")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(controlIconColor(isOverlay: isOverlay))
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(!music.hasQueue || music.isLoading)
+            .opacity((!music.hasQueue || music.isLoading) ? 0.45 : 1)
+
+            if !isExpanded {
+                Button {
+                    Task { @MainActor in
+                        MusicKitService.shared.stop()
+                    }
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(controlFillStyle(isOverlay: isOverlay, overlayOpacity: 0.32))
+                            .frame(width: 26, height: 26)
+                            .overlay(Circle().stroke(Color.white.opacity(0.20), lineWidth: 0.5))
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(controlIconColor(isOverlay: isOverlay))
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func controlFillStyle(isOverlay: Bool, overlayOpacity: Double) -> AnyShapeStyle {
+        if isOverlay {
+            return AnyShapeStyle(Color.black.opacity(overlayOpacity))
+        }
+        return AnyShapeStyle(.ultraThickMaterial)
+    }
+
+    private func controlIconColor(isOverlay: Bool) -> Color {
+        isOverlay ? .white : .primary
+    }
+
+    private var artworkPlaceholder: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: isExpanded ? 10 : 8, style: .continuous)
+                .fill(Color.pink.opacity(0.15))
+            Image(systemName: "music.note")
+                .font(.system(size: isExpanded ? 42 : 16, weight: .medium))
+                .foregroundStyle(.pink)
+        }
     }
 }
 
