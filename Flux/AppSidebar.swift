@@ -29,7 +29,7 @@ private let sidebarItemFont: Font = {
 private let bodyPlus2Font: Font = .body
 private let sidebarItemFont: Font = .body
 #endif
-// import UniformTypeIdentifiers (retiré car drag personnalisé supprimé)
+import UniformTypeIdentifiers
 import SwiftData
 
 #if os(macOS)
@@ -37,6 +37,26 @@ import AppKit
 #endif
 
 private let sidebarItemTextOpacity: Double = 0.80
+
+private func makeSidebarDragItemProvider(id: String) -> NSItemProvider {
+    let provider = NSItemProvider()
+    let payload = id.data(using: .utf8) ?? Data()
+    let identifiers = [
+        UTType.text.identifier,
+        UTType.plainText.identifier,
+        UTType.utf8PlainText.identifier
+    ]
+
+    for identifier in identifiers {
+        provider.registerDataRepresentation(forTypeIdentifier: identifier, visibility: .all) { completion in
+            completion(payload, nil)
+            return nil
+        }
+    }
+
+    provider.suggestedName = id
+    return provider
+}
 
 struct AppSidebar: View {
     private struct AddFeedDeepLinkRequest {
@@ -80,6 +100,7 @@ struct AppSidebar: View {
     @FocusState private var folderNameFocused: Bool
     @State private var expandedFolders: Set<UUID> = []
     @State private var dragTargetFeedId: UUID? = nil
+    @State private var dragTargetFolderId: UUID? = nil
     // Onboarding
     @State private var showOnboarding: Bool = !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
     @State private var showWhatsNew: Bool = false
@@ -1250,34 +1271,39 @@ struct AppSidebar: View {
     private func folderRow(_ folder: Folder) -> some View {
         Group {
             // Ligne d'en-tête du dossier
-            HStack(spacing: 8) {
-                Button(action: { toggleFolder(folder.id) }) {
-                    Image(systemName: expandedFolders.contains(folder.id) ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                Image(systemName: "folder")
-                if renamingFolderId == folder.id {
-                    TextField("Nom du dossier", text: Binding(
-                        get: { tempFolderName },
-                        set: { tempFolderName = $0 }
-                    ))
-                    .textFieldStyle(.roundedBorder)
-                    .focused($folderNameFocused)
-                    .onSubmit { commitFolderRename(folderId: folder.id) }
-                    .onAppear { if tempFolderName.isEmpty { tempFolderName = folder.name }; folderNameFocused = true }
-                } else {
-                    Text(folder.name)
-                        .font(bodyPlus2Font)
-                        .opacity(sidebarItemTextOpacity)
-                }
-                Spacer(minLength: 8)
-                let countUnread = unreadCount(in: folder)
-                if countUnread > 0 {
-                    Circle()
-                        .fill(.blue)
-                        .frame(width: 7, height: 7)
+            ZStack(alignment: .leading) {
+                Rectangle()
+                    .fill(Color.clear)
+
+                HStack(spacing: 8) {
+                    Button(action: { toggleFolder(folder.id) }) {
+                        Image(systemName: expandedFolders.contains(folder.id) ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    Image(systemName: "folder")
+                    if renamingFolderId == folder.id {
+                        TextField("Nom du dossier", text: Binding(
+                            get: { tempFolderName },
+                            set: { tempFolderName = $0 }
+                        ))
+                        .textFieldStyle(.roundedBorder)
+                        .focused($folderNameFocused)
+                        .onSubmit { commitFolderRename(folderId: folder.id) }
+                        .onAppear { if tempFolderName.isEmpty { tempFolderName = folder.name }; folderNameFocused = true }
+                    } else {
+                        Text(folder.name)
+                            .font(bodyPlus2Font)
+                            .opacity(sidebarItemTextOpacity)
+                    }
+                    Spacer(minLength: 8)
+                    let countUnread = unreadCount(in: folder)
+                    if countUnread > 0 {
+                        Circle()
+                            .fill(.blue)
+                            .frame(width: 7, height: 7)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1293,12 +1319,36 @@ struct AppSidebar: View {
                 Button { startFolderRenaming(folder) } label: { Label(lm.localizedString(.rename), systemImage: "pencil") }
                 Button(role: .destructive) { feedService.deleteFolder(folder.id) } label: { Label(lm.localizedString(.delete), systemImage: "trash") }
             }
-            .dropDestination(for: String.self) { items, _ in
-                print("[Sidebar] Drop on folder: \(folder.name) (\(folder.id)) — items: \(items)")
-                guard let first = items.first, let fid = UUID(uuidString: first) else { return false }
-                feedService.moveFeed(fid, toFolder: folder.id)
-                withAnimation(.linear(duration: 0.15)) { expandedFolders.insert(folder.id) }
-                return true
+            .sidebarFolderDropTarget(
+                folderId: folder.id,
+                isTargeted: dragTargetFolderId == folder.id,
+                onTargeted: { isTargeted in
+                    if isTargeted {
+                        withAnimation(.linear(duration: 0.12)) {
+                            dragTargetFolderId = folder.id
+                            expandedFolders.insert(folder.id)
+                        }
+                    } else if dragTargetFolderId == folder.id {
+                        withAnimation(.linear(duration: 0.12)) {
+                            dragTargetFolderId = nil
+                        }
+                    }
+                },
+                onDropFeed: { fid in
+                    print("[Sidebar] Drop on folder: \(folder.name) (\(folder.id)) — feed: \(fid)")
+                    feedService.moveFeed(fid, toFolder: folder.id)
+                    withAnimation(.linear(duration: 0.15)) {
+                        expandedFolders.insert(folder.id)
+                        dragTargetFolderId = nil
+                    }
+                }
+            )
+            .overlay {
+                if dragTargetFolderId == folder.id {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.accentColor, lineWidth: 2)
+                        .padding(.horizontal, 6)
+                }
             }
 
             // Lignes des flux dans le dossier
@@ -1807,7 +1857,17 @@ private struct SidebarDraggableModifier: ViewModifier {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .onDrag { NSItemProvider(object: id as NSString) }
+        .modifier(PlatformSidebarDragModifier(id: id))
+    }
+}
+
+private struct PlatformSidebarDragModifier: ViewModifier {
+    let id: String
+
+    func body(content: Content) -> some View {
+        content.onDrag {
+            return makeSidebarDragItemProvider(id: id)
+        }
     }
 }
 
@@ -1844,6 +1904,186 @@ private struct SidebarDropTargetModifier: ViewModifier {
     }
 }
 
+private struct SidebarFolderDropTargetModifier: ViewModifier {
+    let folderId: UUID
+    let isTargeted: Bool
+    let onTargeted: (Bool) -> Void
+    let onDropFeed: (UUID) -> Void
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content.background(
+            SidebarFolderDropInteractionView(
+                folderId: folderId,
+                isTargeted: isTargeted,
+                onTargeted: onTargeted,
+                onDropFeed: onDropFeed
+            )
+        )
+        #else
+        content.dropDestination(for: String.self, action: { items, _ in
+            guard let first = items.first, let feedId = UUID(uuidString: first) else { return false }
+            onDropFeed(feedId)
+            return true
+        }, isTargeted: onTargeted)
+        #endif
+    }
+}
+
+#if os(iOS)
+private struct SidebarFolderDropInteractionView: UIViewRepresentable {
+    static let acceptedTypes: [UTType] = [
+        .text,
+        .plainText,
+        .utf8PlainText
+    ]
+
+    let folderId: UUID
+    let isTargeted: Bool
+    let onTargeted: (Bool) -> Void
+    let onDropFeed: (UUID) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIView(context: Context) -> FolderDropUIView {
+        let view = FolderDropUIView()
+        let interaction = UIDropInteraction(delegate: context.coordinator)
+        view.addInteraction(interaction)
+        view.backgroundColor = .clear
+        view.isOpaque = false
+        return view
+    }
+
+    func updateUIView(_ uiView: FolderDropUIView, context: Context) {
+        context.coordinator.parent = self
+    }
+
+    final class Coordinator: NSObject, UIDropInteractionDelegate {
+        var parent: SidebarFolderDropInteractionView
+
+        init(parent: SidebarFolderDropInteractionView) {
+            self.parent = parent
+        }
+
+        func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {
+            let accepted = SidebarFolderDropInteractionView.acceptedTypes.map(\.identifier)
+            return session.hasItemsConforming(toTypeIdentifiers: accepted)
+        }
+
+        func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnter session: UIDropSession) {
+            parent.onTargeted(true)
+        }
+
+        func dropInteraction(_ interaction: UIDropInteraction, sessionDidExit session: UIDropSession) {
+            parent.onTargeted(false)
+        }
+
+        func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnd session: UIDropSession) {
+            parent.onTargeted(false)
+        }
+
+        func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {
+            return UIDropProposal(operation: .move)
+        }
+
+        func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
+            let providers = session.items.map(\.itemProvider)
+            guard let provider = providers.first else {
+                parent.onTargeted(false)
+                return
+            }
+
+            loadFeedID(from: provider) { feedId in
+                DispatchQueue.main.async {
+                    guard let feedId else {
+                        self.parent.onTargeted(false)
+                        return
+                    }
+
+                    self.parent.onDropFeed(feedId)
+                    self.parent.onTargeted(false)
+                }
+            }
+        }
+
+        private func loadFeedID(from provider: NSItemProvider, completion: @escaping (UUID?) -> Void) {
+            let typeIdentifiers = SidebarFolderDropInteractionView.acceptedTypes.map(\.identifier)
+            loadFeedID(from: provider, remainingTypeIdentifiers: typeIdentifiers, completion: completion)
+        }
+
+        private func loadFeedID(
+            from provider: NSItemProvider,
+            remainingTypeIdentifiers: [String],
+            completion: @escaping (UUID?) -> Void
+        ) {
+            guard let typeIdentifier = remainingTypeIdentifiers.first else {
+                completion(nil)
+                return
+            }
+
+            provider.loadDataRepresentation(forTypeIdentifier: typeIdentifier) { data, error in
+                if let feedId = self.decodeFeedID(from: data) {
+                    completion(feedId)
+                    return
+                }
+
+                provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { item, itemError in
+                    if let feedId = self.decodeFeedID(from: item) {
+                        completion(feedId)
+                        return
+                    }
+
+                    self.loadFeedID(
+                        from: provider,
+                        remainingTypeIdentifiers: Array(remainingTypeIdentifiers.dropFirst()),
+                        completion: completion
+                    )
+                }
+            }
+        }
+
+        private func decodeFeedID(from data: Data?) -> UUID? {
+            guard let data else { return nil }
+            let rawValue = String(decoding: data, as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "\0", with: "")
+            return UUID(uuidString: rawValue)
+        }
+
+        private func decodeFeedID(from item: NSSecureCoding?) -> UUID? {
+            switch item {
+            case let string as NSString:
+                let rawValue = String(string)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .replacingOccurrences(of: "\0", with: "")
+                return UUID(uuidString: rawValue)
+            case let data as NSData:
+                return decodeFeedID(from: data as Data)
+            case let url as NSURL:
+                let rawValue = url.absoluteString ?? ""
+                return UUID(uuidString: rawValue)
+            default:
+                return nil
+            }
+        }
+    }
+}
+
+private final class FolderDropUIView: UIView {
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        isOpaque = false
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+#endif
+
 private extension View {
     func sidebarDraggable(id: String) -> some View {
         modifier(SidebarDraggableModifier(id: id))
@@ -1857,6 +2097,15 @@ private extension View {
         reorder: @escaping (IndexSet, Int) -> Void
     ) -> some View {
         modifier(SidebarDropTargetModifier(feed: feed, feeds: feeds, isTargeted: isTargeted, onTargeted: onTargeted, reorder: reorder))
+    }
+
+    func sidebarFolderDropTarget(
+        folderId: UUID,
+        isTargeted: Bool,
+        onTargeted: @escaping (Bool) -> Void,
+        onDropFeed: @escaping (UUID) -> Void
+    ) -> some View {
+        modifier(SidebarFolderDropTargetModifier(folderId: folderId, isTargeted: isTargeted, onTargeted: onTargeted, onDropFeed: onDropFeed))
     }
 }
 
