@@ -1,0 +1,4 @@
+build/
+.claude/
+.playwright-cli/
+Flux/Flux.entitlements.old

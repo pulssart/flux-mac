@@ -2,14 +2,24 @@
 // Section éditoriale "Signaux" — marchés prédictifs Polymarket
 
 import SwiftUI
+import SwiftData
+import Combine
 
 struct SignauxView: View {
-    @State private var polymarket = PolymarketService()
+    private static let breakingNewsMaxHorizon: TimeInterval = 7 * 24 * 60 * 60
+    private static let breakingNewsMaxItems: Int = 50
+
+    @Environment(PolymarketService.self) private var polymarket
+    @Environment(FeedService.self) private var feedService
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
+    @Query(sort: \SignalFavorite.createdAt, order: .reverse) private var signalFavorites: [SignalFavorite]
     @State private var selectedCategory: SignalCategory = .all
     @State private var hoveredEventId: String?
     @State private var selectedEvent: PolymarketEvent?
     @State private var shuffledTopIds: [String] = []
     @State private var currentLanguage = LocalizationManager.shared.currentLanguage
+    @Binding var pendingDeepLinkEventId: String?
     @Environment(\.colorScheme) private var colorScheme
     private let lm = LocalizationManager.shared
 
@@ -17,8 +27,71 @@ struct SignauxView: View {
     @State private var cachedFiltered: [PolymarketEvent] = []
     @State private var cachedFeatured: [PolymarketEvent] = []
     @State private var cachedRemaining: [PolymarketEvent] = []
+    @State private var previousBreakingRanks: [String: Int] = [:]
+    @State private var movedBreakingEventIds: Set<String> = []
 
     private let maxContentWidth: CGFloat = 1100
+    private let breakingRefreshTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
+
+    private var favoriteSectionTitle: String {
+        switch currentLanguage {
+        case .french: return "Mes signaux favoris"
+        case .english: return "Favorite signals"
+        case .spanish: return "Mis señales favoritas"
+        case .german: return "Meine Favoriten-Signale"
+        case .italian: return "I miei segnali preferiti"
+        case .portuguese: return "Meus sinais favoritos"
+        case .japanese: return "お気に入りのシグナル"
+        case .chinese: return "我的收藏信号"
+        case .korean: return "내 즐겨찾기 시그널"
+        case .russian: return "Мои избранные сигналы"
+        }
+    }
+
+    private var favoriteSectionSubtitle: String {
+        switch currentLanguage {
+        case .french: return "Retrouvez rapidement les marchés que vous voulez garder sous la main"
+        case .english: return "Quick access to the markets you want to keep an eye on"
+        case .spanish: return "Acceso rápido a los mercados que quieres seguir de cerca"
+        case .german: return "Schneller Zugriff auf die Märkte, die du garder im Blick willst"
+        case .italian: return "Accesso rapido ai mercati che vuoi tenere d’occhio"
+        case .portuguese: return "Acesso rápido aos mercados que você quer acompanhar de perto"
+        case .japanese: return "すぐ見返したいマーケットをここにまとめておけます"
+        case .chinese: return "快速找到你想重点关注的市场"
+        case .korean: return "계속 지켜보고 싶은 마켓을 빠르게 모아볼 수 있습니다"
+        case .russian: return "Быстрый доступ к рынкам, за которыми вы хотите следить"
+        }
+    }
+
+    private var addFavoriteLabel: String {
+        switch currentLanguage {
+        case .french: return "Ajouter aux favoris"
+        case .english: return "Add to favorites"
+        case .spanish: return "Añadir a favoritos"
+        case .german: return "Zu Favoriten hinzufügen"
+        case .italian: return "Aggiungi ai preferiti"
+        case .portuguese: return "Adicionar aos favoritos"
+        case .japanese: return "お気に入りに追加"
+        case .chinese: return "加入收藏"
+        case .korean: return "즐겨찾기에 추가"
+        case .russian: return "Добавить в избранное"
+        }
+    }
+
+    private var removeFavoriteLabel: String {
+        switch currentLanguage {
+        case .french: return "Retirer des favoris"
+        case .english: return "Remove from favorites"
+        case .spanish: return "Quitar de favoritos"
+        case .german: return "Aus Favoriten entfernen"
+        case .italian: return "Rimuovi dai preferiti"
+        case .portuguese: return "Remover dos favoritos"
+        case .japanese: return "お気に入りから削除"
+        case .chinese: return "移出收藏"
+        case .korean: return "즐겨찾기에서 제거"
+        case .russian: return "Удалить из избранного"
+        }
+    }
 
     /// Fond de page sur iPad en dark mode : gris foncé au lieu de noir pur
     private var pageBackgroundColor: Color {
@@ -41,13 +114,83 @@ struct SignauxView: View {
     /// Events filtrés par la catégorie sélectionnée
     private var heroEvent: PolymarketEvent? { cachedFeatured.first }
     private var spotlightEvents: [PolymarketEvent] { Array(cachedFeatured.dropFirst().prefix(2)) }
+    private var syncedFavoriteIds: [String] {
+        Array(Set(signalFavorites.map(\.eventId))).sorted()
+    }
+    private var syncedFavoriteIdSet: Set<String> { Set(syncedFavoriteIds) }
+    private var filteredFavoriteEvents: [PolymarketEvent] {
+        if selectedCategory == .breakingNews { return [] }
+        let favorites = polymarket.favoriteEvents
+        if selectedCategory == .all { return favorites }
+        return favorites.filter { selectedCategory.matches($0) }
+    }
+
+    private var isBreakingNewsCategory: Bool {
+        selectedCategory == .breakingNews
+    }
+
+    private func isEligibleForBreakingNews(_ event: PolymarketEvent, now: Date = Date()) -> Bool {
+        if let startDate = event.startDate, startDate > now {
+            return false
+        }
+
+        guard let endDate = event.endDate else {
+            return true
+        }
+
+        let timeUntilEnd = endDate.timeIntervalSince(now)
+        return timeUntilEnd >= 0 && timeUntilEnd <= Self.breakingNewsMaxHorizon
+    }
 
     private func recomputeCache() {
         let filtered: [PolymarketEvent]
-        if selectedCategory == .all {
+        if selectedCategory == .breakingNews {
+            filtered = Array(
+                polymarket.events
+                .filter { isEligibleForBreakingNews($0) }
+                .filter { ($0.strongestDailyChange.map { abs($0) } ?? 0) > 0 }
+                .sorted { lhs, rhs in
+                    let lhsChange = abs(lhs.strongestDailyChange ?? 0)
+                    let rhsChange = abs(rhs.strongestDailyChange ?? 0)
+                    if lhsChange == rhsChange {
+                        return lhs.volume > rhs.volume
+                    }
+                    return lhsChange > rhsChange
+                }
+                .prefix(Self.breakingNewsMaxItems)
+            )
+        } else if selectedCategory == .all {
             filtered = polymarket.events
         } else {
             filtered = polymarket.events.filter { selectedCategory.matches($0) }
+        }
+
+        if selectedCategory == .breakingNews {
+            let newRanks = Dictionary(uniqueKeysWithValues: filtered.enumerated().map { ($0.element.id, $0.offset + 1) })
+            let movedIds = Set<String>(
+                newRanks.compactMap { id, rank in
+                    guard let previous = previousBreakingRanks[id], previous != rank else { return nil }
+                    return id
+                }
+            )
+
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) {
+                cachedFiltered = filtered
+                cachedFeatured = []
+                cachedRemaining = filtered
+                movedBreakingEventIds = movedIds
+            }
+
+            previousBreakingRanks = newRanks
+
+            if !movedIds.isEmpty {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        movedBreakingEventIds.subtract(movedIds)
+                    }
+                }
+            }
+            return
         }
 
         let filteredIds = Set(filtered.map { $0.id })
@@ -68,6 +211,83 @@ struct SignauxView: View {
         cachedRemaining = filtered.filter { !featuredIds.contains($0.id) }
     }
 
+    private func seedTrendingIfNeeded(from events: [PolymarketEvent]) {
+        guard shuffledTopIds.isEmpty, !events.isEmpty else { return }
+        shuffledTopIds = Array(events.prefix(50)).shuffled().map { $0.id }
+    }
+
+    private func refreshDisplayedSignals() {
+        seedTrendingIfNeeded(from: polymarket.events)
+        recomputeCache()
+    }
+
+    private func refreshSyncedFavorites() {
+        polymarket.replaceFavoriteEventIds(with: syncedFavoriteIds)
+    }
+
+    private func migrateLegacyFavoritesIfNeeded() {
+        let legacyIds = feedService.syncedSignalFavoriteEventIds()
+        guard !legacyIds.isEmpty else { return }
+
+        let existingIds = Set(signalFavorites.map(\.eventId))
+        var inserted = false
+        for legacyId in legacyIds where !existingIds.contains(legacyId) {
+            modelContext.insert(SignalFavorite(eventId: legacyId))
+            inserted = true
+        }
+
+        if inserted {
+            try? modelContext.save()
+        }
+
+        if !legacyIds.isEmpty {
+            feedService.updateSyncedSignalFavoriteEventIds([])
+        }
+    }
+
+    private func normalizeSignalFavoritesIfNeeded() {
+        let grouped = Dictionary(grouping: signalFavorites, by: \.eventId)
+        var needsSave = false
+
+        for (eventId, favorites) in grouped {
+            let stableId = SignalFavorite.stableID(for: eventId)
+            let stableFavorites = favorites.filter { $0.id == stableId }
+            let unstableFavorites = favorites.filter { $0.id != stableId }
+
+            if stableFavorites.isEmpty, let first = favorites.sorted(by: { $0.createdAt < $1.createdAt }).first {
+                modelContext.insert(SignalFavorite(id: stableId, eventId: eventId, createdAt: first.createdAt))
+                needsSave = true
+            }
+
+            let duplicatesToDelete = stableFavorites.dropFirst() + unstableFavorites
+            for favorite in duplicatesToDelete {
+                modelContext.delete(favorite)
+                needsSave = true
+            }
+        }
+
+        if needsSave {
+            try? modelContext.save()
+        }
+    }
+
+    private func toggleFavorite(_ event: PolymarketEvent) {
+        let matches = signalFavorites.filter { $0.eventId == event.id }
+        var updatedIds = syncedFavoriteIdSet
+        if matches.isEmpty {
+            modelContext.insert(SignalFavorite(eventId: event.id))
+            updatedIds.insert(event.id)
+        } else {
+            for favorite in matches {
+                modelContext.delete(favorite)
+            }
+            updatedIds.remove(event.id)
+        }
+        try? modelContext.save()
+        feedService.updateSyncedSignalFavoriteEventIds(updatedIds)
+        polymarket.replaceFavoriteEventIds(with: Array(updatedIds).sorted())
+    }
+
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
@@ -85,26 +305,40 @@ struct SignauxView: View {
                     emptyFilterView
                         .padding(.top, 60)
                 } else {
-                    // Hero
-                    if let hero = heroEvent {
-                        heroCard(hero)
+                    if !filteredFavoriteEvents.isEmpty {
+                        sectionHeader(favoriteSectionTitle, subtitle: favoriteSectionSubtitle)
                             .padding(.top, 24)
-                    }
-
-                    // À la une
-                    if !spotlightEvents.isEmpty {
-                        sectionHeader(lm.localizedString(.signalsFeatured), subtitle: lm.localizedString(.signalsFeaturedSubtitle))
-                            .padding(.top, 32)
-                        spotlightRow
+                        favoritesGrid
                             .padding(.top, 12)
                     }
 
-                    // Tous les signaux
-                    if !cachedRemaining.isEmpty {
-                        sectionHeader(lm.localizedString(.signalsAll), subtitle: lm.localizedString(.signalsAllSubtitle))
-                            .padding(.top, 36)
-                        allSignalsGrid
+                    if isBreakingNewsCategory {
+                        sectionHeader("Breaking news", subtitle: "Les marchés Polymarket qui ont le plus bougé sur 24 heures")
+                            .padding(.top, filteredFavoriteEvents.isEmpty ? 24 : 32)
+                        breakingNewsList
                             .padding(.top, 12)
+                    } else {
+                        // Hero
+                        if let hero = heroEvent {
+                            heroCard(hero)
+                                .padding(.top, filteredFavoriteEvents.isEmpty ? 24 : 32)
+                        }
+
+                        // À la une
+                        if !spotlightEvents.isEmpty {
+                            sectionHeader(lm.localizedString(.signalsFeatured), subtitle: lm.localizedString(.signalsFeaturedSubtitle))
+                                .padding(.top, 32)
+                            spotlightRow
+                                .padding(.top, 12)
+                        }
+
+                        // Tous les signaux
+                        if !cachedRemaining.isEmpty {
+                            sectionHeader(lm.localizedString(.signalsAll), subtitle: lm.localizedString(.signalsAllSubtitle))
+                                .padding(.top, 36)
+                            allSignalsGrid
+                                .padding(.top, 12)
+                        }
                     }
                 }
             }
@@ -116,7 +350,11 @@ struct SignauxView: View {
         }
         .background(pageBackgroundColor)
         .sheet(item: $selectedEvent) { event in
-            SignalDetailSheet(event: event)
+            SignalDetailSheet(
+                event: event,
+                isFavorite: syncedFavoriteIdSet.contains(event.id),
+                onToggleFavorite: { toggleFavorite(event) }
+            )
                 .environment(polymarket)
                 #if os(macOS)
                 .frame(minWidth: 680, idealWidth: 760, minHeight: 560, idealHeight: 680)
@@ -124,13 +362,32 @@ struct SignauxView: View {
                 #endif
         }
         .task {
-            polymarket.fetchEvents()
+            migrateLegacyFavoritesIfNeeded()
+            normalizeSignalFavoritesIfNeeded()
+            refreshSyncedFavorites()
+            feedService.updateSyncedSignalFavoriteEventIds(syncedFavoriteIdSet)
+            polymarket.startMonitoring()
+            refreshDisplayedSignals()
+            openPendingDeepLinkSignalIfNeeded()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                migrateLegacyFavoritesIfNeeded()
+                normalizeSignalFavoritesIfNeeded()
+                refreshSyncedFavorites()
+                feedService.updateSyncedSignalFavoriteEventIds(syncedFavoriteIdSet)
+                polymarket.refreshIfNeeded()
+                refreshDisplayedSignals()
+                openPendingDeepLinkSignalIfNeeded()
+            }
+        }
+        .onChange(of: syncedFavoriteIds) { _, ids in
+            polymarket.replaceFavoriteEventIds(with: ids)
         }
         .onChange(of: polymarket.events) { _, events in
-            if shuffledTopIds.isEmpty, !events.isEmpty {
-                shuffledTopIds = Array(events.prefix(50)).shuffled().map { $0.id }
-            }
+            seedTrendingIfNeeded(from: events)
             recomputeCache()
+            openPendingDeepLinkSignalIfNeeded()
         }
         .onChange(of: shuffledTopIds) { _, _ in
             recomputeCache()
@@ -141,12 +398,29 @@ struct SignauxView: View {
         .onReceive(NotificationCenter.default.publisher(for: .languageChanged)) { notification in
             currentLanguage = notification.object as? SupportedLanguage ?? lm.currentLanguage
         }
+        .onReceive(breakingRefreshTimer) { _ in
+            guard isBreakingNewsCategory, scenePhase == .active else { return }
+            polymarket.refreshIfNeeded(maxAge: 0)
+        }
     }
 
     // MARK: - Open event
 
     private func openEvent(_ event: PolymarketEvent) {
         selectedEvent = event
+    }
+
+    private func openPendingDeepLinkSignalIfNeeded() {
+        guard let pendingDeepLinkEventId else { return }
+        guard pendingDeepLinkEventId.isEmpty == false else {
+            self.pendingDeepLinkEventId = nil
+            return
+        }
+        guard let event = polymarket.events.first(where: { $0.id == pendingDeepLinkEventId }) else { return }
+
+        selectedCategory = .all
+        selectedEvent = event
+        self.pendingDeepLinkEventId = nil
     }
 
     // MARK: - Header
@@ -315,6 +589,10 @@ struct SignauxView: View {
         .onHover { hovering in
             hoveredEventId = hovering ? event.id : nil
         }
+        .overlay(alignment: .topTrailing) {
+            favoriteButton(for: event)
+                .padding(14)
+        }
     }
 
     private var heroImagePlaceholder: some View {
@@ -406,6 +684,10 @@ struct SignauxView: View {
         .onHover { hovering in
             hoveredEventId = hovering ? event.id : nil
         }
+        .overlay(alignment: .topTrailing) {
+            favoriteButton(for: event)
+                .padding(12)
+        }
     }
 
     // MARK: - All Signals Grid (3 colonnes)
@@ -419,9 +701,52 @@ struct SignauxView: View {
 
         return LazyVGrid(columns: columns, spacing: 14) {
             ForEach(cachedRemaining) { event in
-                CompactSignalCard(event: event, onTap: { openEvent(event) })
+                CompactSignalCard(
+                    event: event,
+                    isFavorite: syncedFavoriteIdSet.contains(event.id),
+                    favoriteHelpText: syncedFavoriteIdSet.contains(event.id) ? removeFavoriteLabel : addFavoriteLabel,
+                    onTap: { openEvent(event) },
+                    onToggleFavorite: { toggleFavorite(event) }
+                )
             }
         }
+    }
+
+    private var favoritesGrid: some View {
+        let columns = [
+            GridItem(.flexible(), spacing: 14),
+            GridItem(.flexible(), spacing: 14),
+        ]
+
+        return LazyVGrid(columns: columns, spacing: 14) {
+            ForEach(filteredFavoriteEvents) { event in
+                CompactSignalCard(
+                    event: event,
+                    isFavorite: true,
+                    favoriteHelpText: removeFavoriteLabel,
+                    onTap: { openEvent(event) },
+                    onToggleFavorite: { toggleFavorite(event) }
+                )
+            }
+        }
+    }
+
+    private var breakingNewsList: some View {
+        VStack(spacing: 10) {
+            ForEach(Array(cachedRemaining.enumerated()), id: \.element.id) { index, event in
+                BreakingSignalRow(
+                    rank: index + 1,
+                    event: event,
+                    isFavorite: syncedFavoriteIdSet.contains(event.id),
+                    favoriteHelpText: syncedFavoriteIdSet.contains(event.id) ? removeFavoriteLabel : addFavoriteLabel,
+                    isMoving: movedBreakingEventIds.contains(event.id),
+                    previousRank: previousBreakingRanks[event.id],
+                    onTap: { openEvent(event) },
+                    onToggleFavorite: { toggleFavorite(event) }
+                )
+            }
+        }
+        .animation(.spring(response: 0.5, dampingFraction: 0.82), value: cachedRemaining.map(\.id))
     }
 
     // MARK: - Outcome Components
@@ -565,6 +890,22 @@ struct SignauxView: View {
         return .red
     }
 
+    @ViewBuilder
+    private func favoriteButton(for event: PolymarketEvent) -> some View {
+        let isFavorite = syncedFavoriteIdSet.contains(event.id)
+        Button {
+            toggleFavorite(event)
+        } label: {
+            Image(systemName: isFavorite ? "star.fill" : "star")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(isFavorite ? .yellow : .white)
+                .frame(width: 30, height: 30)
+                .background(.black.opacity(0.28), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .help(isFavorite ? removeFavoriteLabel : addFavoriteLabel)
+    }
+
     // MARK: - Loading & Error
 
     private var emptyFilterView: some View {
@@ -616,7 +957,10 @@ struct SignauxView: View {
 
 private struct CompactSignalCard: View {
     let event: PolymarketEvent
+    let isFavorite: Bool
+    let favoriteHelpText: String
     let onTap: () -> Void
+    let onToggleFavorite: () -> Void
 
     @State private var isHovered = false
     @Environment(\.colorScheme) private var colorScheme
@@ -660,6 +1004,15 @@ private struct CompactSignalCard: View {
                         .foregroundStyle(.tertiary)
                 }
                 Spacer()
+                Button(action: onToggleFavorite) {
+                    Image(systemName: isFavorite ? "star.fill" : "star")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(isFavorite ? .yellow : .secondary)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(Color.secondary.opacity(0.08)))
+                }
+                .buttonStyle(.plain)
+                .help(favoriteHelpText)
             }
 
             Text(event.title)
@@ -747,10 +1100,181 @@ private struct CompactSignalCard: View {
     }
 }
 
+private struct BreakingSignalRow: View {
+    let rank: Int
+    let event: PolymarketEvent
+    let isFavorite: Bool
+    let favoriteHelpText: String
+    let isMoving: Bool
+    let previousRank: Int?
+    let onTap: () -> Void
+    let onToggleFavorite: () -> Void
+
+    @State private var isHovered = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var rowBackground: Color {
+        #if os(iOS)
+        colorScheme == .dark ? Color(white: 0.16) : Color(.systemBackground)
+        #else
+        Color(nsColor: .controlBackgroundColor)
+        #endif
+    }
+
+    private var absoluteChangeText: String {
+        let change = event.strongestDailyChange ?? 0
+        return "\(change > 0 ? "+" : "")\(change)%"
+    }
+
+    private var rankDelta: Int? {
+        guard let previousRank, previousRank != rank else { return nil }
+        return previousRank - rank
+    }
+
+    private var leadingOutcomeText: String {
+        if event.isBinary, let lead = event.leadMarket {
+            return "Oui \(lead.yesPercentage)%"
+        }
+        if let top = event.topOutcomes.first {
+            return "\(top.name) \(top.percentage)%"
+        }
+        return event.formattedVolume
+    }
+
+    @ViewBuilder
+    private var visual: some View {
+        if let imageURL = event.imageURL {
+            AsyncImage(url: imageURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 58, height: 58)
+                        .clipped()
+                default:
+                    visualPlaceholder
+                }
+            }
+            .frame(width: 58, height: 58)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        } else {
+            visualPlaceholder
+        }
+    }
+
+    private var visualPlaceholder: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(Color.secondary.opacity(0.08))
+            .frame(width: 58, height: 58)
+            .overlay {
+                Image(systemName: "bolt.horizontal.circle")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.secondary.opacity(0.45))
+            }
+    }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Text("\(rank)")
+                .font(.system(size: 15, weight: .black, design: .rounded))
+                .foregroundStyle(.secondary)
+                .frame(width: 24)
+
+            visual
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    if let tag = event.primaryTag {
+                        Text(tag.capitalized)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    if let rankDelta {
+                        HStack(spacing: 4) {
+                            Image(systemName: rankDelta > 0 ? "arrow.up.right" : "arrow.down.right")
+                            Text(rankDelta > 0 ? "Monte" : "Baisse")
+                        }
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(rankDelta > 0 ? .green : .red)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill((rankDelta > 0 ? Color.green : Color.red).opacity(0.10))
+                        )
+                    }
+                }
+
+                Text(event.title)
+                    .font(.body.weight(.semibold))
+                    .lineLimit(2)
+
+                HStack(spacing: 12) {
+                    Text(leadingOutcomeText)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(event.formattedVolume)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if event.commentCount > 0 {
+                        Text("\(event.commentCount) com.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 10) {
+                Text(absoluteChangeText)
+                    .font(.system(size: 24, weight: .black, design: .rounded))
+                    .foregroundStyle((event.strongestDailyChange ?? 0) >= 0 ? .green : .red)
+                    .multilineTextAlignment(.trailing)
+
+                Button(action: onToggleFavorite) {
+                    Image(systemName: isFavorite ? "star.fill" : "star")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(isFavorite ? .yellow : .secondary)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(Color.secondary.opacity(0.08)))
+                }
+                .buttonStyle(.plain)
+                .help(favoriteHelpText)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(rowBackground)
+                .shadow(color: .black.opacity(isHovered ? 0.08 : 0.03), radius: isHovered ? 8 : 4, y: isHovered ? 3 : 1)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(
+                    isMoving
+                    ? Color.accentColor.opacity(0.35)
+                    : Color.secondary.opacity(isHovered ? 0.12 : 0.06),
+                    lineWidth: isMoving ? 1.5 : 1
+                )
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .onTapGesture { onTap() }
+        .scaleEffect(isHovered ? 1.004 : (isMoving ? 1.01 : 1.0))
+        .animation(.easeOut(duration: 0.15), value: isHovered)
+        .animation(.spring(response: 0.45, dampingFraction: 0.8), value: isMoving)
+        .onHover { isHovered = $0 }
+    }
+}
+
 // MARK: - Signal Detail Sheet
 
 private struct SignalDetailSheet: View {
     let event: PolymarketEvent
+    let isFavorite: Bool
+    let onToggleFavorite: () -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(PolymarketService.self) private var service
     private let lm = LocalizationManager.shared
@@ -772,6 +1296,36 @@ private struct SignalDetailSheet: View {
         f.unitsStyle = .abbreviated
         return f
     }()
+
+    private var addFavoriteLabel: String {
+        switch currentLanguage {
+        case .french: return "Ajouter aux favoris"
+        case .english: return "Add to favorites"
+        case .spanish: return "Añadir a favoritos"
+        case .german: return "Zu Favoriten hinzufügen"
+        case .italian: return "Aggiungi ai preferiti"
+        case .portuguese: return "Adicionar aos favoritos"
+        case .japanese: return "お気に入りに追加"
+        case .chinese: return "加入收藏"
+        case .korean: return "즐겨찾기에 추가"
+        case .russian: return "Добавить в избранное"
+        }
+    }
+
+    private var removeFavoriteLabel: String {
+        switch currentLanguage {
+        case .french: return "Retirer des favoris"
+        case .english: return "Remove from favorites"
+        case .spanish: return "Quitar de favoritos"
+        case .german: return "Aus Favoriten entfernen"
+        case .italian: return "Rimuovi dai preferiti"
+        case .portuguese: return "Remover dos favoritos"
+        case .japanese: return "お気に入りから削除"
+        case .chinese: return "移出收藏"
+        case .korean: return "즐겨찾기에서 제거"
+        case .russian: return "Удалить из избранного"
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -809,6 +1363,14 @@ private struct SignalDetailSheet: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+
+                Button(action: onToggleFavorite) {
+                    Image(systemName: isFavorite ? "star.fill" : "star")
+                        .foregroundStyle(isFavorite ? .yellow : .primary)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help(isFavorite ? removeFavoriteLabel : addFavoriteLabel)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)

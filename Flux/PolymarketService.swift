@@ -48,6 +48,13 @@ struct PolymarketEvent: Identifiable, Hashable {
     /// Premier tag lisible comme catégorie
     var primaryTag: String? { tags.first }
 
+    /// Plus forte variation absolue sur 24h parmi les marchés de l'événement
+    var strongestDailyChange: Int? {
+        markets
+            .compactMap(\.dailyChange)
+            .max { abs($0) < abs($1) }
+    }
+
     /// Volume formaté
     var formattedVolume: String {
         if volume >= 1_000_000 {
@@ -101,6 +108,7 @@ struct PolymarketMarket: Identifiable, Hashable {
 /// Catégories de signaux affichées dans l'app
 enum SignalCategory: String, CaseIterable, Identifiable {
     case all = "all"
+    case breakingNews = "breaking-news"
     case politics = "politics"
     case sports = "sports"
     case crypto = "crypto"
@@ -111,20 +119,119 @@ enum SignalCategory: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     var displayName: String {
+        let language = LocalizationManager.shared.currentLanguage
         switch self {
-        case .all: return "Tendances"
-        case .politics: return "Politique"
-        case .sports: return "Sports"
-        case .crypto: return "Crypto"
-        case .popCulture: return "Culture"
-        case .finance: return "Finance"
-        case .technology: return "Tech"
+        case .all:
+            switch language {
+            case .french: return "Tendances"
+            case .spanish: return "Tendencias"
+            case .german: return "Trends"
+            case .italian: return "Tendenze"
+            case .portuguese: return "Tendências"
+            case .japanese: return "トレンド"
+            case .chinese: return "趋势"
+            case .korean: return "트렌드"
+            case .russian: return "Тренды"
+            case .english: return "Trending"
+            }
+        case .breakingNews:
+            switch language {
+            case .french: return "Breaking"
+            case .spanish: return "Última hora"
+            case .german: return "Eilmeldung"
+            case .italian: return "Ultim'ora"
+            case .portuguese: return "Urgente"
+            case .japanese: return "速報"
+            case .chinese: return "快讯"
+            case .korean: return "속보"
+            case .russian: return "Срочно"
+            case .english: return "Breaking"
+            }
+        case .politics:
+            switch language {
+            case .french: return "Politique"
+            case .spanish: return "Política"
+            case .german: return "Politik"
+            case .italian: return "Politica"
+            case .portuguese: return "Política"
+            case .japanese: return "政治"
+            case .chinese: return "政治"
+            case .korean: return "정치"
+            case .russian: return "Политика"
+            case .english: return "Politics"
+            }
+        case .sports:
+            switch language {
+            case .french: return "Sports"
+            case .spanish: return "Deportes"
+            case .german: return "Sport"
+            case .italian: return "Sport"
+            case .portuguese: return "Esportes"
+            case .japanese: return "スポーツ"
+            case .chinese: return "体育"
+            case .korean: return "스포츠"
+            case .russian: return "Спорт"
+            case .english: return "Sports"
+            }
+        case .crypto:
+            switch language {
+            case .french: return "Crypto"
+            case .spanish: return "Cripto"
+            case .german: return "Krypto"
+            case .italian: return "Cripto"
+            case .portuguese: return "Cripto"
+            case .japanese: return "暗号資産"
+            case .chinese: return "加密"
+            case .korean: return "크립토"
+            case .russian: return "Крипто"
+            case .english: return "Crypto"
+            }
+        case .popCulture:
+            switch language {
+            case .french: return "Culture"
+            case .spanish: return "Cultura"
+            case .german: return "Kultur"
+            case .italian: return "Cultura"
+            case .portuguese: return "Cultura"
+            case .japanese: return "カルチャー"
+            case .chinese: return "文化"
+            case .korean: return "컬처"
+            case .russian: return "Культура"
+            case .english: return "Culture"
+            }
+        case .finance:
+            switch language {
+            case .french: return "Finance"
+            case .spanish: return "Finanzas"
+            case .german: return "Finanzen"
+            case .italian: return "Finanza"
+            case .portuguese: return "Finanças"
+            case .japanese: return "金融"
+            case .chinese: return "金融"
+            case .korean: return "금융"
+            case .russian: return "Финансы"
+            case .english: return "Finance"
+            }
+        case .technology:
+            switch language {
+            case .french: return "Tech"
+            case .spanish: return "Tecnología"
+            case .german: return "Tech"
+            case .italian: return "Tech"
+            case .portuguese: return "Tecnologia"
+            case .japanese: return "テック"
+            case .chinese: return "科技"
+            case .korean: return "테크"
+            case .russian: return "Тех"
+            case .english: return "Tech"
+            }
         }
     }
 
     var icon: String {
         switch self {
         case .all: return "flame"
+        case .breakingNews: return "bolt.badge.clock"
         case .politics: return "building.columns"
         case .sports: return "sportscourt"
         case .crypto: return "bitcoinsign.circle"
@@ -138,6 +245,7 @@ enum SignalCategory: String, CaseIterable, Identifiable {
     var keywords: [String] {
         switch self {
         case .all: return []
+        case .breakingNews: return []
         case .politics: return ["president", "presidential", "election", "democrat", "republican", "congress", "senate", "governor", "nominee", "trump", "biden", "political", "parliament", "minister", "regime", "invasion", "invade", "ceasefire", "military", "offensive", "nato", "sanction", "greenland", "iran", "ukraine", "russia", "venezuela", "taiwan", "israel", "lebanon", "hungary", "vietnam", "brazil", "netanyahu", "maduro", "starmer", "xi jinping", "fed chair", "measles"]
         case .sports: return ["nba", "nfl", "mlb", "nhl", "ncaa", "fifa", "ufc", "tennis", "soccer", "football", "basketball", "baseball", "hockey", "champion", "super bowl", "world cup", "grand slam", "olympics", "formula", "f1 driver", "playoff", "mvp", "boxing", "mma", "cricket", "golf", "pga", "masters", "augusta", "stanley cup", "premier league", "la liga", "serie a", "bundesliga", "ligue 1", "uefa", "australian open", "grand prix", "mls cup", "atlético", "atletico"]
         case .crypto: return ["bitcoin", "ethereum", "crypto", "solana", "blockchain", "defi", "memecoin", "dogecoin", "xrp", "stablecoin", "binance", "coinbase", "microstrategy", "backpack fdv", "megaeth", "satoshi", "metamask", "token", "edgex"]
@@ -150,10 +258,34 @@ enum SignalCategory: String, CaseIterable, Identifiable {
     /// Teste si un événement correspond à cette catégorie (match sur titre + slug uniquement)
     func matches(_ event: PolymarketEvent) -> Bool {
         guard !keywords.isEmpty else { return true }
-        let searchText = " \(event.title) \(event.slug) ".lowercased()
+        let normalizedTokens = Self.normalizedTokens(from: "\(event.title) \(event.slug)")
         return keywords.contains { keyword in
-            searchText.contains(keyword)
+            Self.matchesKeyword(keyword, in: normalizedTokens)
         }
+    }
+
+    private static func normalizedTokens(from text: String) -> [String] {
+        text
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+    }
+
+    private static func matchesKeyword(_ keyword: String, in tokens: [String]) -> Bool {
+        let keywordTokens = normalizedTokens(from: keyword)
+        guard !keywordTokens.isEmpty, keywordTokens.count <= tokens.count else { return false }
+
+        if keywordTokens.count == 1 {
+            return tokens.contains(keywordTokens[0])
+        }
+
+        for start in 0...(tokens.count - keywordTokens.count) {
+            let slice = Array(tokens[start..<(start + keywordTokens.count)])
+            if slice == keywordTokens {
+                return true
+            }
+        }
+        return false
     }
 }
 
@@ -164,6 +296,7 @@ enum SignalCategory: String, CaseIterable, Identifiable {
 final class PolymarketService {
     private let logger = Logger(subsystem: "Flux", category: "PolymarketService")
     private static let baseURL = "https://gamma-api.polymarket.com"
+    private static let refreshInterval: TimeInterval = 5 * 60
 
     var events: [PolymarketEvent] = []
     var isLoading: Bool = false
@@ -173,6 +306,7 @@ final class PolymarketService {
 
     private var allEvents: [PolymarketEvent] = []
     private var fetchTask: Task<Void, Never>?
+    private var monitoringTimer: Timer?
     private var knownEventIds: Set<String> = []
     private var hasPerformedInitialFetch: Bool = false
 
@@ -182,6 +316,34 @@ final class PolymarketService {
         if let saved = UserDefaults.standard.stringArray(forKey: Self.favoritesKey) {
             favoriteEventIds = Set(saved)
         }
+    }
+
+    func startMonitoring() {
+        if monitoringTimer == nil {
+            let timer = Timer.scheduledTimer(withTimeInterval: Self.refreshInterval, repeats: true) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.fetchEvents()
+                }
+            }
+            timer.tolerance = 30
+            monitoringTimer = timer
+            logger.info("Started Polymarket monitoring")
+        }
+
+        refreshIfNeeded()
+    }
+
+    func refreshIfNeeded(maxAge: TimeInterval = 90) {
+        guard !isLoading else { return }
+        if let lastFetchedAt, Date().timeIntervalSince(lastFetchedAt) < maxAge, !events.isEmpty {
+            return
+        }
+        fetchEvents()
+    }
+
+    func replaceFavoriteEventIds(with ids: [String]) {
+        favoriteEventIds = Set(ids)
+        UserDefaults.standard.set(Array(favoriteEventIds).sorted(), forKey: Self.favoritesKey)
     }
 
     /// Les événements favoris actuellement actifs (triés par volume)
@@ -201,7 +363,7 @@ final class PolymarketService {
         } else {
             favoriteEventIds.insert(event.id)
         }
-        UserDefaults.standard.set(Array(favoriteEventIds), forKey: Self.favoritesKey)
+        UserDefaults.standard.set(Array(favoriteEventIds).sorted(), forKey: Self.favoritesKey)
     }
 
     /// Filtre les events par catégorie côté client
@@ -270,23 +432,25 @@ final class PolymarketService {
 
     // MARK: - Notifications
 
-    private var notificationsEnabled: Bool {
-        if UserDefaults.standard.object(forKey: "notificationsEnabled") == nil { return false }
-        return UserDefaults.standard.bool(forKey: "notificationsEnabled")
+    private var signalNotificationsEnabled: Bool {
+        if UserDefaults.standard.object(forKey: "signalNotificationsEnabled") == nil { return true }
+        return UserDefaults.standard.bool(forKey: "signalNotificationsEnabled")
     }
 
     private func notifyNewSignals(_ newEvents: [PolymarketEvent]) {
-        guard notificationsEnabled, !newEvents.isEmpty else { return }
+        guard signalNotificationsEnabled, !newEvents.isEmpty else { return }
         #if canImport(UserNotifications)
         let lm = LocalizationManager.shared
         let content = UNMutableNotificationContent()
         if newEvents.count == 1, let first = newEvents.first {
             content.title = lm.localizedString(.signalsNewNotificationTitle)
             content.body = first.title
+            content.userInfo["fluxDeepLink"] = FluxDeepLink.signalURL(eventId: first.id)?.absoluteString
         } else {
             content.title = lm.localizedString(.signalsNewNotificationTitle)
             let bodyTemplate = lm.localizedString(.signalsNewNotificationBody)
             content.body = String(format: bodyTemplate, newEvents.count)
+            content.userInfo["fluxDeepLink"] = FluxDeepLink.signalURL(eventId: nil)?.absoluteString
         }
         content.sound = .default
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)

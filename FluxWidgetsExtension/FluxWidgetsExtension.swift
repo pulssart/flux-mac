@@ -172,6 +172,8 @@ enum WidgetShared {
     static let notesWidgetKind = "NotesWidgetV2"      // keep existing widgets working
     static let savedArticlesFileName = "savedArticles.json"
     static let readLaterWidgetKind = "ReadLaterWidgetV2"
+    static let favoriteSignalsFileName = "favoriteSignals.json"
+    static let favoriteSignalWidgetKind = "FavoriteSignalWidgetV2"
 
     static func sharedDataDirectoryURL() -> URL? {
         guard let containerURL = FileManager.default.containerURL(
@@ -213,6 +215,25 @@ struct ReaderNoteSnapshot: Codable, Identifiable {
     let articlePublishedAt: Date?
     let selectedText: String
     let createdAt: Date
+}
+
+struct FavoriteSignalSnapshot: Codable, Identifiable {
+    struct Outcome: Codable, Hashable {
+        let label: String
+        let percentage: Int
+    }
+
+    let id: String
+    let title: String
+    let subtitle: String
+    let category: String
+    let volume: String
+    let commentCount: Int
+    let endDate: Date?
+    let url: URL
+    let imageURL: URL?
+    let isBinary: Bool
+    let outcomes: [Outcome]
 }
 
 extension WidgetShared {
@@ -367,6 +388,18 @@ extension WidgetShared {
         }
         return decoded
     }
+
+    static func loadFavoriteSignals() -> [FavoriteSignalSnapshot] {
+        guard
+            let fileURL = sharedDataDirectoryURL()?
+                .appendingPathComponent(favoriteSignalsFileName, isDirectory: false),
+            let data = try? Data(contentsOf: fileURL),
+            let decoded = try? JSONDecoder().decode([FavoriteSignalSnapshot].self, from: data)
+        else {
+            return []
+        }
+        return decoded
+    }
 }
 
 struct WallWidgetNavigateIntent: AppIntent {
@@ -481,6 +514,53 @@ struct SelectFeedIntent: WidgetConfigurationIntent {
 
     init(feed: FeedEntity?) {
         self.feed = feed
+    }
+}
+
+struct FavoriteSignalEntity: AppEntity {
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Signal favori")
+    static var defaultQuery = FavoriteSignalEntityQuery()
+
+    let id: String
+    let title: String
+
+    var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(title: LocalizedStringResource(stringLiteral: title))
+    }
+}
+
+struct FavoriteSignalEntityQuery: EntityQuery {
+    func entities(for identifiers: [String]) async throws -> [FavoriteSignalEntity] {
+        let all = WidgetShared.loadFavoriteSignals().map {
+            FavoriteSignalEntity(id: $0.id, title: $0.title)
+        }
+        let lookup = Set(identifiers)
+        return all.filter { lookup.contains($0.id) }
+    }
+
+    func suggestedEntities() async throws -> [FavoriteSignalEntity] {
+        WidgetShared.loadFavoriteSignals().map {
+            FavoriteSignalEntity(id: $0.id, title: $0.title)
+        }
+    }
+}
+
+struct SelectFavoriteSignalIntent: WidgetConfigurationIntent {
+    static var title: LocalizedStringResource = "Choisir un signal"
+    static var description = IntentDescription("Choisis le signal favori affiché par le widget.")
+    static var parameterSummary: some ParameterSummary {
+        Summary("Signal : \(\.$signal)")
+    }
+
+    @Parameter(title: "Signal")
+    var signal: FavoriteSignalEntity?
+
+    init() {
+        self.signal = nil
+    }
+
+    init(signal: FavoriteSignalEntity?) {
+        self.signal = signal
     }
 }
 
@@ -2075,6 +2155,374 @@ struct ReadLaterWidget: Widget {
     }
 }
 
+struct FavoriteSignalEntry: TimelineEntry {
+    let date: Date
+    let signal: FavoriteSignalSnapshot?
+}
+
+struct FavoriteSignalProvider: AppIntentTimelineProvider {
+    func placeholder(in context: Context) -> FavoriteSignalEntry {
+        FavoriteSignalEntry(
+            date: .now,
+            signal: FavoriteSignalSnapshot(
+                id: "example",
+                title: "Bitcoin au-dessus de 120k avant la fin de l'année ?",
+                subtitle: "Marché prédictif Polymarket",
+                category: "Crypto",
+                volume: "$1.2M",
+                commentCount: 128,
+                endDate: .now.addingTimeInterval(86_400 * 90),
+                url: URL(string: "https://polymarket.com")!,
+                imageURL: URL(string: "https://polymarket-upload.s3.us-east-2.amazonaws.com/ethereum.png"),
+                isBinary: true,
+                outcomes: [
+                    .init(label: "Oui", percentage: 62),
+                    .init(label: "Non", percentage: 38)
+                ]
+            )
+        )
+    }
+
+    func snapshot(for configuration: SelectFavoriteSignalIntent, in context: Context) async -> FavoriteSignalEntry {
+        loadEntry(for: configuration)
+    }
+
+    func timeline(for configuration: SelectFavoriteSignalIntent, in context: Context) async -> Timeline<FavoriteSignalEntry> {
+        let entry = loadEntry(for: configuration)
+        let nextRefresh = Calendar.current.date(byAdding: .minute, value: 15, to: .now) ?? .now.addingTimeInterval(900)
+        return Timeline(entries: [entry], policy: .after(nextRefresh))
+    }
+
+    func recommendations() -> [AppIntentRecommendation<SelectFavoriteSignalIntent>] {
+        var recommendations: [AppIntentRecommendation<SelectFavoriteSignalIntent>] = [
+            AppIntentRecommendation(
+                intent: SelectFavoriteSignalIntent(signal: nil),
+                description: "Signal favori"
+            )
+        ]
+
+        recommendations += WidgetShared.loadFavoriteSignals()
+            .prefix(6)
+            .map { signal in
+                AppIntentRecommendation(
+                    intent: SelectFavoriteSignalIntent(
+                        signal: FavoriteSignalEntity(id: signal.id, title: signal.title)
+                    ),
+                    description: signal.title
+                )
+            }
+
+        return recommendations
+    }
+
+    private func loadEntry(for configuration: SelectFavoriteSignalIntent) -> FavoriteSignalEntry {
+        let signals = WidgetShared.loadFavoriteSignals()
+        let selectedId = configuration.signal?.id
+        let signal = signals.first { $0.id == selectedId } ?? signals.first
+        return FavoriteSignalEntry(date: .now, signal: signal)
+    }
+}
+
+private struct FavoriteSignalWidgetView: View {
+    let entry: FavoriteSignalEntry
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        Group {
+            if let signal = entry.signal {
+                Link(destination: signal.url) {
+                    content(for: signal)
+                }
+                .buttonStyle(.plain)
+            } else {
+                emptyState
+            }
+        }
+        .containerBackground(for: .widget) {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.97, green: 0.98, blue: 1.0),
+                    Color.white
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func content(for signal: FavoriteSignalSnapshot) -> some View {
+        switch family {
+        case .systemSmall:
+            smallView(signal)
+        case .systemMedium:
+            mediumView(signal)
+        default:
+            largeView(signal)
+        }
+    }
+
+    private func smallView(_ signal: FavoriteSignalSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header(signal)
+            Text(signal.title)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(.primary)
+                .lineLimit(4)
+            Spacer(minLength: 0)
+            compactOutcome(signal)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func mediumView(_ signal: FavoriteSignalSnapshot) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
+                header(signal)
+                Text(signal.title)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(3)
+                if !signal.subtitle.isEmpty {
+                    Text(signal.subtitle)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                }
+                Spacer(minLength: 0)
+                footer(signal)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            outcomePanel(signal)
+                .frame(width: 118)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func largeView(_ signal: FavoriteSignalSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            header(signal)
+            Text(signal.title)
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(.primary)
+                .lineLimit(3)
+
+            if !signal.subtitle.isEmpty {
+                Text(signal.subtitle)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            }
+
+            if signal.isBinary, signal.outcomes.count >= 2 {
+                HStack(spacing: 12) {
+                    spotlightOutcome(signal.outcomes[0], tint: Color.green)
+                    spotlightOutcome(signal.outcomes[1], tint: Color.red)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(signal.outcomes.prefix(4)), id: \.self) { outcome in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(outcome.label)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text("\(outcome.percentage)%")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(.primary)
+                            }
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    Capsule().fill(Color.black.opacity(0.08))
+                                    Capsule()
+                                        .fill(Color.blue)
+                                        .frame(width: geo.size.width * CGFloat(outcome.percentage) / 100)
+                                }
+                            }
+                            .frame(height: 8)
+                        }
+                    }
+                }
+            }
+
+            Spacer(minLength: 0)
+            footer(signal)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func header(_ signal: FavoriteSignalSnapshot) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            signalIcon(signal, size: family == .systemSmall ? 22 : 28)
+
+            Text(signal.category.uppercased())
+                .font(.system(size: 11, weight: .black, design: .rounded))
+                .foregroundStyle(Color.blue)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Text("Flux")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func signalIcon(_ signal: FavoriteSignalSnapshot, size: CGFloat) -> some View {
+        if let imageURL = signal.imageURL {
+            AsyncImage(url: imageURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                default:
+                    fallbackSignalIcon
+                }
+            }
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+        } else {
+            fallbackSignalIcon
+                .frame(width: size, height: size)
+        }
+    }
+
+    private var fallbackSignalIcon: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.blue.opacity(0.18),
+                            Color.green.opacity(0.10)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            Image(systemName: "chart.line.uptrend.xyaxis")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Color.blue)
+        }
+    }
+
+    private func compactOutcome(_ signal: FavoriteSignalSnapshot) -> some View {
+        let first = signal.outcomes.first
+        let second = signal.outcomes.dropFirst().first
+        return VStack(alignment: .leading, spacing: 6) {
+            if let first {
+                Text("\(first.label) \(first.percentage)%")
+                    .font(.system(size: 18, weight: .heavy))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+            }
+            if let second {
+                Text("\(second.label) \(second.percentage)%")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private func outcomePanel(_ signal: FavoriteSignalSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(signal.outcomes.prefix(3)), id: \.self) { outcome in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(outcome.label)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Text("\(outcome.percentage)%")
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.black.opacity(0.04))
+                )
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func spotlightOutcome(_ outcome: FavoriteSignalSnapshot.Outcome, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(outcome.label)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Text("\(outcome.percentage)%")
+                .font(.system(size: 28, weight: .heavy))
+                .foregroundStyle(tint)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(tint.opacity(0.10))
+        )
+    }
+
+    private func footer(_ signal: FavoriteSignalSnapshot) -> some View {
+        HStack(spacing: 10) {
+            Label(signal.volume, systemImage: "chart.bar.fill")
+            Label("\(signal.commentCount)", systemImage: "bubble.left.fill")
+            if let endDate = signal.endDate {
+                HStack(spacing: 4) {
+                    Image(systemName: "calendar")
+                    Text(endDate, style: .date)
+                }
+            }
+        }
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("SIGNAUX")
+                .font(.system(size: 13, weight: .black, design: .rounded))
+                .foregroundStyle(Color.blue)
+            Text("Ajoute un signal en favoris dans Flux pour l'afficher ici.")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(4)
+            Spacer(minLength: 0)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+struct FavoriteSignalWidget: Widget {
+    let kind: String = WidgetShared.favoriteSignalWidgetKind
+
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(
+            kind: kind,
+            intent: SelectFavoriteSignalIntent.self,
+            provider: FavoriteSignalProvider()
+        ) { entry in
+            FavoriteSignalWidgetView(entry: entry)
+        }
+        .configurationDisplayName("Signal favori")
+        .description("Affiche un signal Polymarket parmi tes favoris.")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .contentMarginsDisabled()
+    }
+}
+
 @main
 struct FluxWidgetsExtensionBundle: WidgetBundle {
     var body: some Widget {
@@ -2083,5 +2531,6 @@ struct FluxWidgetsExtensionBundle: WidgetBundle {
         WallArticlesWidget()
         NotesWidget()
         ReadLaterWidget()
+        FavoriteSignalWidget()
     }
 }

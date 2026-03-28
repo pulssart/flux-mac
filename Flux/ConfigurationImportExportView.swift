@@ -11,6 +11,7 @@ import AppKit
 struct ConfigurationImportExportView: View {
     @Environment(FeedService.self) private var feedService
     let language: SupportedLanguage
+    var showsHeader: Bool = true
     private let lm = LocalizationManager.shared
     @State private var isExporting = false
     @State private var isImporting = false
@@ -25,17 +26,18 @@ struct ConfigurationImportExportView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // En-tête
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.up.arrow.down.circle")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.blue)
-                Text(lm.localizedString(.configuration))
-                    .font(.system(size: 13, weight: .semibold))
-                Spacer()
+            if showsHeader {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.up.arrow.down.circle")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.blue)
+                    Text(lm.localizedString(.configuration))
+                        .font(.system(size: 13, weight: .semibold))
+                    Spacer()
+                }
+
+                Divider()
             }
-            
-            Divider()
             
             // Note d'information
             HStack {

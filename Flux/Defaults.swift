@@ -136,7 +136,15 @@ struct DefaultsInitializer {
                                  aiProviderConfig: settingsData.aiProviderConfig,
                                  imageScrapingEnabled: settingsData.imageScrapingEnabled,
                                  windowBlurEnabled: settingsData.windowBlurEnabled,
-                                 hideTitleOnThumbnails: settingsData.hideTitleOnThumbnails)
+                                 windowBlurTintOpacity: settingsData.windowBlurTintOpacity,
+                                 hideTitleOnThumbnails: settingsData.hideTitleOnThumbnails,
+                                 filterAdsEnabled: settingsData.filterAdsEnabled,
+                                 notificationsEnabled: settingsData.notificationsEnabled,
+                                 signalNotificationsEnabled: settingsData.signalNotificationsEnabled ?? true,
+                                 hapticsEnabled: settingsData.hapticsEnabled,
+                                 alwaysOpenInBrowser: settingsData.alwaysOpenInBrowser,
+                                 badgeReadLaterEnabled: settingsData.badgeReadLaterEnabled,
+                                 signalFavoriteEventIds: settingsData.signalFavoriteEventIds ?? [])
                 context.insert(s)
             }
             try context.save()
@@ -145,4 +153,3 @@ struct DefaultsInitializer {
         }
     }
 }
-

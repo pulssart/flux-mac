@@ -3,17 +3,17 @@
 // Données principales (SwiftData)
 import Foundation
 import SwiftData
+import CryptoKit
 
 @Model
 final class Feed: Identifiable {
-    @Attribute(.unique)
-    var id: UUID
-    var title: String
+    var id: UUID = UUID()
+    var title: String = ""
     var siteURL: URL?
-    var feedURL: URL
+    var feedURL: URL = URL(string: "https://example.com/feed.xml")!
     var faviconURL: URL?
-    var tags: [String]
-    var addedAt: Date
+    var tags: [String] = []
+    var addedAt: Date = Date()
     // Index d'ordre pour la sidebar (drag & drop). Optionnel pour permettre la migration soft.
     var sortIndex: Int?
     // Association optionnelle à un dossier (organisation dans la sidebar)
@@ -34,11 +34,10 @@ final class Feed: Identifiable {
 
 @Model
 final class Article: Identifiable {
-    @Attribute(.unique)
-    var id: UUID
-    var feedId: UUID
-    var title: String
-    var url: URL
+    var id: UUID = UUID()
+    var feedId: UUID = UUID()
+    var title: String = ""
+    var url: URL = URL(string: "https://example.com/article")!
     var author: String?
     var publishedAt: Date?
     var contentHTML: String?
@@ -48,8 +47,8 @@ final class Article: Identifiable {
     var readingTime: Int?
     var lang: String?
     var score: Double?
-    var isRead: Bool
-    var isSaved: Bool
+    var isRead: Bool = false
+    var isSaved: Bool = false
     
     init(id: UUID = UUID(), feedId: UUID, title: String, url: URL, author: String? = nil, publishedAt: Date? = nil, contentHTML: String? = nil, contentText: String? = nil, imageURL: URL? = nil, summary: String? = nil, readingTime: Int? = nil, lang: String? = nil, score: Double? = nil, isRead: Bool = false, isSaved: Bool = false) {
         self.id = id
@@ -72,17 +71,16 @@ final class Article: Identifiable {
 
 @Model
 final class ReaderNote: Identifiable {
-    @Attribute(.unique)
-    var id: UUID
+    var id: UUID = UUID()
     var articleId: UUID?
     var feedId: UUID?
-    var articleTitle: String
-    var articleURL: URL
+    var articleTitle: String = ""
+    var articleURL: URL = URL(string: "https://example.com/article")!
     var articleImageURL: URL?
     var articleSource: String?
     var articlePublishedAt: Date?
-    var selectedText: String
-    var createdAt: Date
+    var selectedText: String = ""
+    var createdAt: Date = Date()
 
     init(
         id: UUID = UUID(),
@@ -111,13 +109,12 @@ final class ReaderNote: Identifiable {
 
 @Model
 final class Suggestion: Identifiable {
-    @Attribute(.unique)
-    var id: UUID
-    var title: String
-    var url: URL
+    var id: UUID = UUID()
+    var title: String = ""
+    var url: URL = URL(string: "https://example.com")!
     var reason: String?
     var score: Double?
-    var createdAt: Date
+    var createdAt: Date = Date()
     
     init(id: UUID = UUID(), title: String, url: URL, reason: String? = nil, score: Double? = nil, createdAt: Date = .now) {
         self.id = id
@@ -131,19 +128,27 @@ final class Suggestion: Identifiable {
 
 @Model
 final class Settings: Identifiable {
-    @Attribute(.unique)
-    var id: UUID
-    var theme: String
+    static let sharedID = UUID(uuidString: "7D8C6C24-3F9A-4D61-8E8B-2DCC0B9A7E11")!
+
+    var id: UUID = Settings.sharedID
+    var theme: String = "system"
     var ttsVoice: String?
-    var ttsRate: Double
-    var preferredLangs: [String]
+    var ttsRate: Double = 1.0
+    var preferredLangs: [String] = ["fr", "en"]
     var aiProviderConfig: Data? // Stockage des settings AI sérialisés
-    var imageScrapingEnabled: Bool
+    var imageScrapingEnabled: Bool = true
     var windowBlurEnabled: Bool?
+    var windowBlurTintOpacity: Double?
     var hideTitleOnThumbnails: Bool?
     var filterAdsEnabled: Bool?
+    var notificationsEnabled: Bool?
+    var signalNotificationsEnabled: Bool?
+    var hapticsEnabled: Bool?
+    var alwaysOpenInBrowser: Bool?
+    var badgeReadLaterEnabled: Bool?
+    var signalFavoriteEventIds: [String] = []
 
-    init(id: UUID = UUID(), theme: String = "system", ttsVoice: String? = nil, ttsRate: Double = 1.0, preferredLangs: [String] = ["fr", "en"], aiProviderConfig: Data? = nil, imageScrapingEnabled: Bool = true, windowBlurEnabled: Bool? = nil, hideTitleOnThumbnails: Bool? = nil, filterAdsEnabled: Bool? = false) {
+    init(id: UUID = Settings.sharedID, theme: String = "system", ttsVoice: String? = nil, ttsRate: Double = 1.0, preferredLangs: [String] = ["fr", "en"], aiProviderConfig: Data? = nil, imageScrapingEnabled: Bool = true, windowBlurEnabled: Bool? = nil, windowBlurTintOpacity: Double? = nil, hideTitleOnThumbnails: Bool? = nil, filterAdsEnabled: Bool? = false, notificationsEnabled: Bool? = nil, signalNotificationsEnabled: Bool? = true, hapticsEnabled: Bool? = nil, alwaysOpenInBrowser: Bool? = nil, badgeReadLaterEnabled: Bool? = nil, signalFavoriteEventIds: [String] = []) {
         self.id = id
         self.theme = theme
         self.ttsVoice = ttsVoice
@@ -152,24 +157,65 @@ final class Settings: Identifiable {
         self.aiProviderConfig = aiProviderConfig
         self.imageScrapingEnabled = imageScrapingEnabled
         self.windowBlurEnabled = windowBlurEnabled
+        self.windowBlurTintOpacity = windowBlurTintOpacity
         self.hideTitleOnThumbnails = hideTitleOnThumbnails
         self.filterAdsEnabled = filterAdsEnabled
+        self.notificationsEnabled = notificationsEnabled
+        self.signalNotificationsEnabled = signalNotificationsEnabled
+        self.hapticsEnabled = hapticsEnabled
+        self.alwaysOpenInBrowser = alwaysOpenInBrowser
+        self.badgeReadLaterEnabled = badgeReadLaterEnabled
+        self.signalFavoriteEventIds = signalFavoriteEventIds
     }
 }
 
 @Model
 final class Folder: Identifiable {
-    @Attribute(.unique)
-    var id: UUID
-    var name: String
+    var id: UUID = UUID()
+    var name: String = ""
     // Ordre d'affichage des dossiers (drag & drop)
     var sortIndex: Int?
-    var createdAt: Date
+    var createdAt: Date = Date()
 
     init(id: UUID = UUID(), name: String, sortIndex: Int? = nil, createdAt: Date = .now) {
         self.id = id
         self.name = name
         self.sortIndex = sortIndex
+        self.createdAt = createdAt
+    }
+}
+
+@Model
+final class SignalFavorite: Identifiable {
+    var id: UUID = UUID()
+    var eventId: String = ""
+    var createdAt: Date = Date()
+
+    static func stableID(for eventId: String) -> UUID {
+        let digest = SHA256.hash(data: Data(eventId.utf8))
+        let bytes = Array(digest.prefix(16))
+        let uuidBytes: uuid_t = (
+            bytes[0], bytes[1], bytes[2], bytes[3],
+            bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[8], bytes[9], bytes[10], bytes[11],
+            bytes[12], bytes[13], bytes[14], bytes[15]
+        )
+        return UUID(uuid: uuidBytes)
+    }
+
+    init(id: UUID? = nil, eventId: String, createdAt: Date = .now) {
+        self.id = id ?? Self.stableID(for: eventId)
+        self.eventId = eventId
+        self.createdAt = createdAt
+    }
+
+    convenience init(eventId: String, createdAt: Date = .now) {
+        self.init(id: Self.stableID(for: eventId), eventId: eventId, createdAt: createdAt)
+    }
+
+    init(id: UUID = UUID(), eventId: String, createdAt: Date = .now, legacy: Bool) {
+        self.id = id
+        self.eventId = eventId
         self.createdAt = createdAt
     }
 }
@@ -216,8 +262,15 @@ struct SettingsExportData: Codable {
     let aiProviderConfig: Data?
     let imageScrapingEnabled: Bool
     let windowBlurEnabled: Bool?
+    let windowBlurTintOpacity: Double?
     let hideTitleOnThumbnails: Bool?
     let filterAdsEnabled: Bool?
+    let notificationsEnabled: Bool?
+    let signalNotificationsEnabled: Bool?
+    let hapticsEnabled: Bool?
+    let alwaysOpenInBrowser: Bool?
+    let badgeReadLaterEnabled: Bool?
+    let signalFavoriteEventIds: [String]?
 }
 
 /// Résumé d'un import de configuration

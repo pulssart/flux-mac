@@ -78,6 +78,7 @@ struct AppSidebar: View {
     @State private var selectedFeedId: UUID? = AppSidebar.allFeedsId
     @State private var selectedFolderId: UUID? = nil
     @State private var deepLinkArticleRequest: ArticleOpenRequest? = nil
+    @State private var pendingSignalEventId: String? = nil
     @State private var showAddSheet = false
     @State private var showSettings = false
     @State private var newFeedURL = ""
@@ -586,6 +587,13 @@ struct AppSidebar: View {
             return
         }
 
+        if let signalEventId = parseSignalDeepLink(from: incomingURL) {
+            selectedFolderId = nil
+            selectedFeedId = Self.signauxId
+            pendingSignalEventId = signalEventId
+            return
+        }
+
         guard let scheme = incomingURL.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return }
         openInDefaultBrowser(incomingURL)
     }
@@ -686,6 +694,13 @@ struct AppSidebar: View {
         }
 
         return url
+    }
+
+    private func parseSignalDeepLink(from incomingURL: URL) -> String? {
+        guard incomingURL.scheme?.lowercased() == "flux" else { return nil }
+        guard incomingURL.host?.lowercased() == "signals" else { return nil }
+        guard let components = URLComponents(url: incomingURL, resolvingAgainstBaseURL: false) else { return "" }
+        return components.queryItems?.first(where: { $0.name == "eventId" })?.value ?? ""
     }
 
     private func parseAddFeedDeepLink(from incomingURL: URL) -> AddFeedDeepLinkRequest? {
@@ -1398,7 +1413,7 @@ struct AppSidebar: View {
                 } else if selectedFeedId == Self.discoveryId {
                     DiscoveryView()
                 } else if selectedFeedId == Self.signauxId {
-                    SignauxView()
+                    SignauxView(pendingDeepLinkEventId: $pendingSignalEventId)
                 } else if selectedFeedId == Self.notesId {
                     NotesView()
                 } else if selectedFeedId != Self.allFeedsId {

@@ -308,7 +308,7 @@ struct OnboardingView: View {
         guard !selected.isEmpty else { return }
         Task {
             for source in selected {
-                try? await feedService.addFeed(from: source.url)
+                _ = try? await feedService.addFeed(from: source.url)
             }
         }
     }

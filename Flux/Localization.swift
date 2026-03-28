@@ -434,6 +434,8 @@ enum LocalizationKey {
     case windowBlurToggle
     case hideTitleOnThumbnails
     case notificationsToggle
+    case notificationsNewsToggle
+    case notificationsSignalsToggle
     case hapticsToggle
     case openArticleFirstToggle
     case reduceOverlaysToggle
@@ -602,6 +604,8 @@ enum LocalizationKey {
         case .windowBlurToggle: return "Fond de fenêtre en liquid glass"
         case .hideTitleOnThumbnails: return "Masquer titre et source sur les miniatures (visible au survol)"
         case .notificationsToggle: return "Activer les notifications"
+        case .notificationsNewsToggle: return "Activer les notifications d'actualités"
+        case .notificationsSignalsToggle: return "Activer les notifications de signaux"
         case .hapticsToggle: return "Activer les retours haptiques"
         case .openArticleFirstToggle: return "Ouvrir l'article avant le résumé IA"
         case .reduceOverlaysToggle: return "Réduire les popups dans le lecteur"
@@ -770,6 +774,8 @@ enum LocalizationKey {
         case .windowBlurToggle: return "Liquid glass window background"
         case .hideTitleOnThumbnails: return "Hide title and source on thumbnails (visible on hover)"
         case .notificationsToggle: return "Enable notifications"
+        case .notificationsNewsToggle: return "Enable news notifications"
+        case .notificationsSignalsToggle: return "Enable signal notifications"
         case .hapticsToggle: return "Enable haptic feedback"
         case .openArticleFirstToggle: return "Open the article before the AI summary"
         case .reduceOverlaysToggle: return "Reduce popups in reader"
@@ -938,6 +944,8 @@ enum LocalizationKey {
         case .windowBlurToggle: return "Fondo de ventana en liquid glass"
         case .hideTitleOnThumbnails: return "Ocultar título y fuente en miniaturas (visible al pasar)"
         case .notificationsToggle: return "Activar notificaciones"
+        case .notificationsNewsToggle: return "Activar notificaciones de noticias"
+        case .notificationsSignalsToggle: return "Activar notificaciones de señales"
         case .hapticsToggle: return "Activar respuesta háptica"
         case .openArticleFirstToggle: return "Abrir el artículo antes del resumen con IA"
         case .reduceOverlaysToggle: return "Reducir pop-ups en el lector"
@@ -1106,6 +1114,8 @@ enum LocalizationKey {
         case .windowBlurToggle: return "Transparenter Hintergrundunschärfe des Fensters"
         case .hideTitleOnThumbnails: return "Titel und Quelle auf Miniaturbildern ausblenden (beim Überfahren sichtbar)"
         case .notificationsToggle: return "Benachrichtigungen aktivieren"
+        case .notificationsNewsToggle: return "Benachrichtigungen für Nachrichten aktivieren"
+        case .notificationsSignalsToggle: return "Benachrichtigungen für Signale aktivieren"
         case .hapticsToggle: return "Haptisches Feedback aktivieren"
         case .openArticleFirstToggle: return "Artikel vor der KI-Zusammenfassung öffnen"
         case .reduceOverlaysToggle: return "Pop-ups im Lesemodus reduzieren"
@@ -1274,6 +1284,8 @@ enum LocalizationKey {
         case .windowBlurToggle: return "Sfocatura trasparente dello sfondo della finestra"
         case .hideTitleOnThumbnails: return "Nascondi titolo e fonte sulle miniature (visibile al passaggio)"
         case .notificationsToggle: return "Attiva notifiche"
+        case .notificationsNewsToggle: return "Attiva le notifiche delle notizie"
+        case .notificationsSignalsToggle: return "Attiva le notifiche dei segnali"
         case .hapticsToggle: return "Attiva feedback aptico"
         case .openArticleFirstToggle: return "Apri l'articolo prima del riassunto IA"
         case .reduceOverlaysToggle: return "Riduci i popup nel lettore"
@@ -1414,6 +1426,8 @@ enum LocalizationKey {
         case .windowBlurToggle: return "Fundo da janela em liquid glass"
         case .hideTitleOnThumbnails: return "Ocultar título e fonte nas miniaturas (visível ao passar)"
         case .notificationsToggle: return "Ativar notificações"
+        case .notificationsNewsToggle: return "Ativar notificações de notícias"
+        case .notificationsSignalsToggle: return "Ativar notificações de sinais"
         case .hapticsToggle: return "Ativar feedback tátil"
         case .openArticleFirstToggle: return "Abrir o artigo antes do resumo de IA"
         case .reduceOverlaysToggle: return "Reduzir pop-ups no leitor"
@@ -1559,6 +1573,8 @@ enum LocalizationKey {
         case .windowBlurToggle: return "ウィンドウ背景の透明ブラー"
         case .hideTitleOnThumbnails: return "サムネイルのタイトルとソースを非表示（ホバー時に表示）"
         case .notificationsToggle: return "通知を有効にする"
+        case .notificationsNewsToggle: return "ニュース通知を有効にする"
+        case .notificationsSignalsToggle: return "シグナル通知を有効にする"
         case .hapticsToggle: return "触覚フィードバックを有効にする"
         case .openArticleFirstToggle: return "AI要約の前に記事を開く"
         case .reduceOverlaysToggle: return "リーダーでポップアップを減らす"
@@ -1704,6 +1720,8 @@ enum LocalizationKey {
         case .windowBlurToggle: return "窗口背景透明模糊"
         case .hideTitleOnThumbnails: return "在缩略图上隐藏标题和来源（悬停时可见）"
         case .notificationsToggle: return "启用通知"
+        case .notificationsNewsToggle: return "启用新闻通知"
+        case .notificationsSignalsToggle: return "启用信号通知"
         case .hapticsToggle: return "启用触觉反馈"
         case .openArticleFirstToggle: return "在 AI 摘要前打开文章"
         case .reduceOverlaysToggle: return "在阅读模式减少弹窗"
@@ -1849,6 +1867,8 @@ enum LocalizationKey {
         case .windowBlurToggle: return "창 배경 투명 블러"
         case .hideTitleOnThumbnails: return "썸네일에서 제목과 출처 숨기기 (호버 시 표시)"
         case .notificationsToggle: return "알림 활성화"
+        case .notificationsNewsToggle: return "뉴스 알림 활성화"
+        case .notificationsSignalsToggle: return "시그널 알림 활성화"
         case .hapticsToggle: return "햅틱 피드백 활성화"
         case .openArticleFirstToggle: return "AI 요약 전에 기사 열기"
         case .reduceOverlaysToggle: return "리더에서 팝업 줄이기"
@@ -1994,6 +2014,8 @@ enum LocalizationKey {
         case .windowBlurToggle: return "Прозрачное размытие фона окна"
         case .hideTitleOnThumbnails: return "Скрыть заголовок и источник на миниатюрах (видно при наведении)"
         case .notificationsToggle: return "Включить уведомления"
+        case .notificationsNewsToggle: return "Включить уведомления о новостях"
+        case .notificationsSignalsToggle: return "Включить уведомления о сигналах"
         case .hapticsToggle: return "Включить тактильную обратную связь"
         case .openArticleFirstToggle: return "Открывать статью до ИИ‑сводки"
         case .reduceOverlaysToggle: return "Уменьшать всплывающие окна в режиме чтения"

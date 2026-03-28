@@ -5,6 +5,9 @@ import Foundation
 import OSLog
 import Observation
 import SwiftData
+#if canImport(CloudKit)
+import CloudKit
+#endif
 extension Notification.Name {
     // NOTE: Removed duplicate web overlay names to avoid redeclaration
     // static let closeWebViewOverlay = Notification.Name("CloseWebViewOverlay")
@@ -50,6 +53,16 @@ import SwiftSoup
 @Observable
 @MainActor
 final class FeedService {
+    enum ICloudSyncStatus: Equatable {
+        case checking
+        case enabled
+        case unavailable
+        case disabled
+    }
+
+    static let appGroupIdentifier = "group.com.adriendonot.fluxapp"
+    static let iCloudContainerIdentifier = "iCloud.com.adriendonot.fluxapp"
+
     private enum WidgetSnapshotStore {
         static let appGroupId = "group.com.adriendonot.fluxapp"
         static let dataDirectory = "Library/Application Support/widget-data"
@@ -64,6 +77,15 @@ final class FeedService {
         static let readLaterWidgetKind = "ReadLaterWidgetV2"
         static let widgetKinds = [widgetKind, feedDigestWidgetKind, wallWidgetKind, readLaterWidgetKind]
         static let imageDirectory = "Library/Application Support/widget-data/images"
+    }
+
+    private enum ScreenSaverSnapshotStore {
+        static let appGroupId = "group.com.adriendonot.fluxapp"
+        static let sharedContainerFolder = "Library/Group Containers/group.com.adriendonot.fluxapp"
+        static let publicSharedFolder = "/Users/Shared/FluxScreenSaver"
+        static let rootFolderName = "Flux/ScreenSaver"
+        static let articlesFileName = "articles.json"
+        static let imageDirectoryName = "images"
     }
 
     private struct WidgetFeedMeta: Codable {
@@ -87,10 +109,28 @@ final class FeedService {
         let articles: [WidgetArticleSnapshot]
     }
 
+    private struct ScreenSaverArticleSnapshot: Codable {
+        let id: UUID
+        let title: String
+        let summary: String?
+        let url: URL
+        let imageURL: URL?
+        let imageFileName: String?
+        let feedTitle: String
+        let faviconURL: URL?
+        let faviconFileName: String?
+        let publishedAt: Date?
+    }
+
     private struct WidgetImageJob: Sendable {
         let imageURL: URL
         let refererURL: URL
         let fileName: String
+    }
+
+    private enum NotificationStorageKeys {
+        static let lastFreshNewsNotificationAt = "notifications.lastFreshNewsNotificationAt"
+        static let lastFreshNewsArticleURL = "notifications.lastFreshNewsArticleURL"
     }
 
     private let modelContext: ModelContext
@@ -141,6 +181,8 @@ final class FeedService {
     var isGeneratingArticleSummary: Bool = false
     // UI binding pour ouvrir la feuille de réglages
     var showSettingsSheet: Bool = false
+    var iCloudSyncStatus: ICloudSyncStatus = .checking
+    var iCloudSyncDiagnosticMessage: String?
     // Message d'erreur AI pour l'UI
     var aiErrorMessage: String?
     #if canImport(AVFoundation)
@@ -170,13 +212,17 @@ final class FeedService {
         let aiEnabled: Bool?
         let newsletterAudioEnabled: Bool?
     }
+    private let isICloudSyncConfigured: Bool
     
-    init(context: ModelContext) {
+    init(context: ModelContext, isICloudSyncConfigured: Bool = false) {
         self.modelContext = context
+        self.isICloudSyncConfigured = isICloudSyncConfigured
         loadFeeds()
         loadFolders()
         loadArticles()
         loadReaderNotes()
+        normalizeDuplicateFeedsIfNeeded()
+        normalizeAndApplySyncedSettings()
         logger.info("FeedService init — feeds: \(self.feeds.count), articles: \(self.articles.count)")
         setupDefaultFeedsIfNeeded()
         migrateResetIsReadIfNeeded()
@@ -184,9 +230,168 @@ final class FeedService {
         Task { [weak self] in
             await self?.ensureFavicons()
         }
+        Task { [weak self] in
+            await self?.refreshICloudSyncStatus()
+        }
         // Newsletter schedule désactivé
         // loadNewsletterSchedule()
         // scheduleNewsletterTimers()
+    }
+
+    func prepareScreenSaverContent() {
+        syncWidgetSnapshots()
+    }
+
+    private func normalizeAndApplySyncedSettings() {
+        do {
+            let settings = try ensureSingletonSettingsRecord()
+            applySettingsToLocalPreferences(settings)
+        } catch {
+            logger.error("Failed to normalize synced settings: \(error.localizedDescription)")
+        }
+    }
+
+    private func makeSettingsSnapshot(from settings: Settings) -> Settings {
+        Settings(
+            id: Settings.sharedID,
+            theme: settings.theme,
+            ttsVoice: settings.ttsVoice,
+            ttsRate: settings.ttsRate,
+            preferredLangs: settings.preferredLangs,
+            aiProviderConfig: settings.aiProviderConfig,
+            imageScrapingEnabled: settings.imageScrapingEnabled,
+            windowBlurEnabled: settings.windowBlurEnabled,
+            windowBlurTintOpacity: settings.windowBlurTintOpacity,
+            hideTitleOnThumbnails: settings.hideTitleOnThumbnails,
+            filterAdsEnabled: settings.filterAdsEnabled,
+            notificationsEnabled: settings.notificationsEnabled,
+            signalNotificationsEnabled: settings.signalNotificationsEnabled,
+            hapticsEnabled: settings.hapticsEnabled,
+            alwaysOpenInBrowser: settings.alwaysOpenInBrowser,
+            badgeReadLaterEnabled: settings.badgeReadLaterEnabled,
+            signalFavoriteEventIds: settings.signalFavoriteEventIds
+        )
+    }
+
+    private func buildSettingsFromLocalPreferences() -> Settings {
+        let defaults = UserDefaults.standard
+        return Settings(
+            id: Settings.sharedID,
+            preferredLangs: [LocalizationManager.shared.currentLanguage.rawValue],
+            windowBlurEnabled: defaults.bool(forKey: "windowBlurEnabled"),
+            windowBlurTintOpacity: defaults.object(forKey: "windowBlurTintOpacity") as? Double ?? 0.48,
+            hideTitleOnThumbnails: defaults.bool(forKey: "hideTitleOnThumbnails"),
+            filterAdsEnabled: defaults.bool(forKey: "filterAdsEnabled"),
+            notificationsEnabled: defaults.object(forKey: "notificationsEnabled") == nil ? false : defaults.bool(forKey: "notificationsEnabled"),
+            signalNotificationsEnabled: defaults.object(forKey: "signalNotificationsEnabled") == nil ? true : defaults.bool(forKey: "signalNotificationsEnabled"),
+            hapticsEnabled: defaults.object(forKey: "hapticsEnabled") == nil ? true : defaults.bool(forKey: "hapticsEnabled"),
+            alwaysOpenInBrowser: defaults.bool(forKey: "reader.alwaysOpenInBrowser"),
+            badgeReadLaterEnabled: defaults.object(forKey: "badgeReadLaterEnabled") == nil ? true : defaults.bool(forKey: "badgeReadLaterEnabled"),
+            signalFavoriteEventIds: defaults.stringArray(forKey: "polymarket.favoriteEventIds") ?? []
+        )
+    }
+
+    func ensureSingletonSettingsRecord() throws -> Settings {
+        let allSettings = try modelContext.fetch(FetchDescriptor<Settings>())
+        if let shared = allSettings.first(where: { $0.id == Settings.sharedID }) {
+            for duplicate in allSettings where duplicate.id != Settings.sharedID {
+                modelContext.delete(duplicate)
+            }
+            try? modelContext.save()
+            return shared
+        }
+
+        if let first = allSettings.first {
+            let shared = makeSettingsSnapshot(from: first)
+            modelContext.insert(shared)
+            for existing in allSettings {
+                modelContext.delete(existing)
+            }
+            try modelContext.save()
+            return shared
+        }
+
+        let settings = buildSettingsFromLocalPreferences()
+        modelContext.insert(settings)
+        try modelContext.save()
+        return settings
+    }
+
+    func updateSyncedPreferences(_ mutate: (Settings) -> Void) {
+        do {
+            let settings = try ensureSingletonSettingsRecord()
+            mutate(settings)
+            try modelContext.save()
+            applySettingsToLocalPreferences(settings)
+        } catch {
+            logger.error("Failed to update synced preferences: \(error.localizedDescription)")
+        }
+    }
+
+    private func applySettingsToLocalPreferences(_ settings: Settings) {
+        let defaults = UserDefaults.standard
+
+        if let preferredLang = settings.preferredLangs.first, let language = SupportedLanguage(rawValue: preferredLang) {
+            LocalizationManager.shared.currentLanguage = language
+        }
+        if let value = settings.windowBlurEnabled { defaults.set(value, forKey: "windowBlurEnabled") }
+        if let value = settings.windowBlurTintOpacity { defaults.set(value, forKey: "windowBlurTintOpacity") }
+        if let value = settings.hideTitleOnThumbnails { defaults.set(value, forKey: "hideTitleOnThumbnails") }
+        if let value = settings.filterAdsEnabled { defaults.set(value, forKey: "filterAdsEnabled") }
+        if let value = settings.notificationsEnabled { defaults.set(value, forKey: "notificationsEnabled") }
+        if let value = settings.signalNotificationsEnabled { defaults.set(value, forKey: "signalNotificationsEnabled") }
+        if let value = settings.hapticsEnabled { defaults.set(value, forKey: "hapticsEnabled") }
+        if let value = settings.alwaysOpenInBrowser { defaults.set(value, forKey: "reader.alwaysOpenInBrowser") }
+        if let value = settings.badgeReadLaterEnabled { defaults.set(value, forKey: "badgeReadLaterEnabled") }
+        defaults.set(settings.signalFavoriteEventIds, forKey: "polymarket.favoriteEventIds")
+    }
+
+    func syncedSignalFavoriteEventIds() -> [String] {
+        if let settings = try? ensureSingletonSettingsRecord() {
+            return settings.signalFavoriteEventIds
+        }
+        return UserDefaults.standard.stringArray(forKey: "polymarket.favoriteEventIds") ?? []
+    }
+
+    func updateSyncedSignalFavoriteEventIds(_ ids: Set<String>) {
+        let ordered = Array(ids).sorted()
+        updateSyncedPreferences { settings in
+            settings.signalFavoriteEventIds = ordered
+        }
+    }
+
+    func refreshICloudSyncStatus() async {
+        guard isICloudSyncConfigured else {
+            iCloudSyncStatus = .disabled
+            if iCloudSyncDiagnosticMessage == nil {
+                iCloudSyncDiagnosticMessage = "Flux a démarré sur le stockage local de secours."
+            }
+            return
+        }
+
+        #if canImport(CloudKit)
+        do {
+            let status = try await CKContainer(identifier: Self.iCloudContainerIdentifier).accountStatus()
+            switch status {
+            case .available:
+                iCloudSyncStatus = .enabled
+                iCloudSyncDiagnosticMessage = "Le conteneur iCloud est disponible."
+            case .noAccount, .restricted, .couldNotDetermine, .temporarilyUnavailable:
+                iCloudSyncStatus = .unavailable
+                iCloudSyncDiagnosticMessage = "iCloud ou CloudKit n’est pas disponible sur cet appareil."
+            @unknown default:
+                iCloudSyncStatus = .unavailable
+                iCloudSyncDiagnosticMessage = "État iCloud inconnu."
+            }
+        } catch {
+            logger.error("Failed to fetch iCloud sync status: \(error.localizedDescription)")
+            iCloudSyncStatus = .unavailable
+            iCloudSyncDiagnosticMessage = error.localizedDescription
+        }
+        #else
+        iCloudSyncStatus = .disabled
+        iCloudSyncDiagnosticMessage = "CloudKit n’est pas disponible sur cette plateforme."
+        #endif
     }
     
     /// Migration one-shot : reset isRead pour passer au nouveau système (lu = article ouvert individuellement)
@@ -523,6 +728,89 @@ final class FeedService {
         logger.info("Loaded reader notes: \(self.readerNotes.count)")
     }
 
+    private func normalizedFeedKey(for url: URL) -> String {
+        canonicalKey(for: url, guid: nil)
+    }
+
+    private func preferredFeedToKeep(between lhs: Feed, and rhs: Feed, articleCounts: [UUID: Int]) -> Feed {
+        let lhsCount = articleCounts[lhs.id] ?? 0
+        let rhsCount = articleCounts[rhs.id] ?? 0
+        if lhsCount != rhsCount { return lhsCount > rhsCount ? lhs : rhs }
+
+        let lhsInFolder = lhs.folderId != nil
+        let rhsInFolder = rhs.folderId != nil
+        if lhsInFolder != rhsInFolder { return lhsInFolder ? lhs : rhs }
+
+        let lhsSort = lhs.sortIndex ?? Int.max
+        let rhsSort = rhs.sortIndex ?? Int.max
+        if lhsSort != rhsSort { return lhsSort < rhsSort ? lhs : rhs }
+
+        if lhs.addedAt != rhs.addedAt { return lhs.addedAt <= rhs.addedAt ? lhs : rhs }
+        return lhs
+    }
+
+    private func mergeFeedMetadata(from source: Feed, into destination: Feed) {
+        if destination.folderId == nil, let folderId = source.folderId {
+            destination.folderId = folderId
+        }
+        if destination.sortIndex == nil, let sortIndex = source.sortIndex {
+            destination.sortIndex = sortIndex
+        }
+        if destination.siteURL == nil, let siteURL = source.siteURL {
+            destination.siteURL = siteURL
+        }
+        if destination.faviconURL == nil, let faviconURL = source.faviconURL {
+            destination.faviconURL = faviconURL
+        }
+        if destination.tags.isEmpty, source.tags.isEmpty == false {
+            destination.tags = source.tags
+        }
+        if destination.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           source.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            destination.title = source.title
+        }
+        if source.addedAt < destination.addedAt {
+            destination.addedAt = source.addedAt
+        }
+    }
+
+    private func normalizeDuplicateFeedsIfNeeded() {
+        guard feeds.isEmpty == false else { return }
+
+        let articleCounts = Dictionary(grouping: articles, by: \.feedId).mapValues(\.count)
+        let groups = Dictionary(grouping: feeds) { normalizedFeedKey(for: $0.feedURL) }
+            .values
+            .filter { $0.count > 1 }
+
+        guard groups.isEmpty == false else { return }
+
+        for group in groups {
+            guard var keeper = group.first else { continue }
+            for candidate in group.dropFirst() {
+                keeper = preferredFeedToKeep(between: keeper, and: candidate, articleCounts: articleCounts)
+            }
+
+            for duplicate in group where duplicate.id != keeper.id {
+                mergeFeedMetadata(from: duplicate, into: keeper)
+                for article in articles where article.feedId == duplicate.id {
+                    article.feedId = keeper.id
+                }
+                modelContext.delete(duplicate)
+            }
+        }
+
+        do {
+            try modelContext.save()
+        } catch {
+            logger.error("Failed to normalize duplicate feeds: \(error.localizedDescription)")
+        }
+
+        loadFeeds()
+        loadArticles()
+        removeDuplicateArticles()
+        loadArticles()
+    }
+
     private func syncWidgetSnapshots() {
         guard let dataDirectoryURL = Self.widgetDataDirectoryURL() else { return }
 
@@ -615,7 +903,7 @@ final class FeedService {
             .filter { article in
                 seenWallURLs.insert(article.url.absoluteString).inserted
             }
-            .prefix(10)
+            .prefix(30)
             .map { article in
                 let feedTitle = feeds.first(where: { $0.id == article.feedId })?.title ?? ""
                 let imageFileName = article.imageURL.map { _ in "\(article.id.uuidString).jpg" }
@@ -643,6 +931,8 @@ final class FeedService {
             )
             try? wallData.write(to: wallFileURL, options: .atomic)
         }
+
+        syncScreenSaverSnapshots(from: wallArticles)
 
         // Saved articles (read later)
         let savedArticles: [WidgetArticleSnapshot] = articles
@@ -707,6 +997,7 @@ final class FeedService {
         let uniqueJobs = Array(Dictionary(grouping: jobs, by: \.fileName).values.compactMap(\.first))
         Task(priority: .utility) {
             await Self.prefetchWidgetImages(uniqueJobs)
+            Self.copyWidgetImagesToScreenSaverCache(fileNames: Set(uniqueJobs.map(\.fileName)))
             scheduleWidgetTimelineReload(preferredDelay: 0.8)
         }
     }
@@ -786,6 +1077,111 @@ final class FeedService {
 
         if removedCount > 0 {
             appLog("[FeedService] Purged \(removedCount) orphaned widget images")
+        }
+    }
+
+    private static func screenSaverDataDirectoryURL() -> URL? {
+        let publicDirectoryURL = URL(fileURLWithPath: ScreenSaverSnapshotStore.publicSharedFolder, isDirectory: true)
+        let directoryURL: URL
+        if FileManager.default.fileExists(atPath: "/Users/Shared") {
+            directoryURL = publicDirectoryURL
+        } else {
+            let baseDirectory =
+                FileManager.default.containerURL(
+                    forSecurityApplicationGroupIdentifier: ScreenSaverSnapshotStore.appGroupId
+                )
+                ?? {
+                    #if os(macOS)
+                    return FileManager.default.homeDirectoryForCurrentUser
+                        .appendingPathComponent(
+                            ScreenSaverSnapshotStore.sharedContainerFolder,
+                            isDirectory: true
+                        )
+                    #else
+                    return FileManager.default.urls(
+                        for: .applicationSupportDirectory,
+                        in: .userDomainMask
+                    ).first
+                    #endif
+                }()
+                ?? FileManager.default.temporaryDirectory
+            directoryURL = baseDirectory.appendingPathComponent(
+                ScreenSaverSnapshotStore.rootFolderName,
+                isDirectory: true
+            )
+        }
+        try? FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        return directoryURL
+    }
+
+    private static func screenSaverImagesDirectoryURL() -> URL? {
+        guard let dataDirectoryURL = screenSaverDataDirectoryURL() else { return nil }
+        let directoryURL = dataDirectoryURL.appendingPathComponent(
+            ScreenSaverSnapshotStore.imageDirectoryName,
+            isDirectory: true
+        )
+        try? FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        return directoryURL
+    }
+
+    private func syncScreenSaverSnapshots(from wallArticles: [WidgetArticleSnapshot]) {
+        guard let dataDirectoryURL = Self.screenSaverDataDirectoryURL() else { return }
+
+        let snapshots = wallArticles.map { article in
+            let sourceArticle = articles.first(where: { $0.id == article.id })
+            let sourceFeed = feeds.first(where: { $0.title == article.feedTitle })
+            return ScreenSaverArticleSnapshot(
+                id: article.id,
+                title: article.title,
+                summary: Self.firstSentences(
+                    from: sourceArticle?.summary ?? sourceArticle?.contentText,
+                    maxCharacters: 150
+                ),
+                url: article.url,
+                imageURL: article.imageURL,
+                imageFileName: article.imageFileName,
+                feedTitle: article.feedTitle,
+                faviconURL: defaultFaviconURL(for: sourceFeed),
+                faviconFileName: sourceFeed.map { "\($0.id.uuidString)-favicon.png" },
+                publishedAt: article.publishedAt
+            )
+        }
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted]
+        encoder.dateEncodingStrategy = .iso8601
+        if let data = try? encoder.encode(snapshots) {
+            let fileURL = dataDirectoryURL.appendingPathComponent(
+                ScreenSaverSnapshotStore.articlesFileName,
+                isDirectory: false
+            )
+            try? data.write(to: fileURL, options: .atomic)
+        }
+
+        let fileNames = Set(snapshots.compactMap(\.imageFileName))
+        Self.copyWidgetImagesToScreenSaverCache(fileNames: fileNames)
+        if let imageDirectoryURL = Self.screenSaverImagesDirectoryURL() {
+            Self.purgeOrphanedWidgetImages(in: imageDirectoryURL, keeping: fileNames)
+        }
+    }
+
+    private static func copyWidgetImagesToScreenSaverCache(fileNames: Set<String>) {
+        guard
+            fileNames.isEmpty == false,
+            let widgetDirectoryURL = widgetImagesDirectoryURL(),
+            let screenSaverDirectoryURL = screenSaverImagesDirectoryURL()
+        else {
+            return
+        }
+
+        let fileManager = FileManager.default
+        for fileName in fileNames {
+            let sourceURL = widgetDirectoryURL.appendingPathComponent(fileName, isDirectory: false)
+            let destinationURL = screenSaverDirectoryURL.appendingPathComponent(fileName, isDirectory: false)
+            guard fileManager.fileExists(atPath: sourceURL.path) else { continue }
+            if fileManager.fileExists(atPath: destinationURL.path) == false {
+                try? fileManager.copyItem(at: sourceURL, to: destinationURL)
+            }
         }
     }
 
@@ -2340,6 +2736,7 @@ final class FeedService {
 
     func refreshArticles(for feedId: UUID? = nil, earliestDate: Date? = nil, stream: Bool = false) async throws {
         let isSingleFeed = feedId != nil
+        var refreshCleanup: (() -> Void)?
 
         if isSingleFeed {
             // Refresh ciblé (ajout de flux) : prioritaire, interrompt le global si en cours
@@ -2351,9 +2748,9 @@ final class FeedService {
                 appLog("[FeedService] Interrupting global refresh for priority single-feed refresh")
             }
             refreshingFeedId = feedId
-            defer {
-                isSingleFeedRefreshing = false
-                refreshingFeedId = nil
+            refreshCleanup = { [self] in
+                self.isSingleFeedRefreshing = false
+                self.refreshingFeedId = nil
                 #if os(macOS)
                 HapticFeedback.tap()
                 #endif
@@ -2365,17 +2762,20 @@ final class FeedService {
             isRefreshing = true
             suppressBadgeUpdates = true
             refreshingFeedId = nil
-            defer {
-                isRefreshing = false
-                suppressBadgeUpdates = false
-                refreshingFeedId = nil
-                cancelGlobalRefresh = false
-                updateAppBadge()
-                syncWidgetSnapshots()
+            refreshCleanup = { [self] in
+                self.isRefreshing = false
+                self.suppressBadgeUpdates = false
+                self.refreshingFeedId = nil
+                self.cancelGlobalRefresh = false
+                self.updateAppBadge()
+                self.syncWidgetSnapshots()
                 #if os(macOS)
                 HapticFeedback.tap()
                 #endif
             }
+        }
+        defer {
+            refreshCleanup?()
         }
 
         let targets = feedId != nil ? self.feeds.filter { $0.id == feedId } : self.feeds
@@ -2883,7 +3283,17 @@ final class FeedService {
         let newUnread = max(0, unreadCountAfter - unreadCountBefore)
         
         if newUnread > 0 {
-            notifyNewArticles(count: newUnread)
+            let notificationCandidates = created
+                .filter { !musicFeedIdsForNotif.contains($0.feedId) }
+                .sorted { ($0.publishedAt ?? .distantPast) > ($1.publishedAt ?? .distantPast) }
+
+            if let freshestArticle = notificationCandidates.first {
+                Task { [weak self] in
+                    await self?.notifyFreshArticleIfNeeded(freshestArticle, totalNewCount: newUnread)
+                }
+            } else {
+                notifyNewArticles(count: newUnread)
+            }
         }
     }
 
@@ -2925,6 +3335,221 @@ final class FeedService {
         let req = UNNotificationRequest(identifier: "flux.new.articles.\(UUID().uuidString)", content: content, trigger: trigger)
         UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
         #endif
+    }
+
+    private func notifyFreshArticleIfNeeded(_ article: Article, totalNewCount: Int) async {
+        guard notificationsEnabled else { return }
+        guard shouldSendFreshArticleNotification(for: article) else { return }
+
+        let feedTitle = feeds.first(where: { $0.id == article.feedId })?.title ?? ""
+        let content = await buildFreshArticleNotificationContent(for: article, feedTitle: feedTitle, totalNewCount: totalNewCount)
+
+        #if canImport(UserNotifications)
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.8, repeats: false)
+        let request = UNNotificationRequest(
+            identifier: "flux.fresh.article.\(article.id.uuidString)",
+            content: content,
+            trigger: trigger
+        )
+        try? await UNUserNotificationCenter.current().add(request)
+        rememberFreshArticleNotification(article)
+        #endif
+    }
+
+    private func shouldSendFreshArticleNotification(for article: Article) -> Bool {
+        let defaults = UserDefaults.standard
+
+        if let lastURL = defaults.string(forKey: NotificationStorageKeys.lastFreshNewsArticleURL),
+           lastURL == article.url.absoluteString {
+            return false
+        }
+
+        if let lastDate = defaults.object(forKey: NotificationStorageKeys.lastFreshNewsNotificationAt) as? Date,
+           Date().timeIntervalSince(lastDate) < (25 * 60) {
+            return false
+        }
+
+        return true
+    }
+
+    private func rememberFreshArticleNotification(_ article: Article) {
+        let defaults = UserDefaults.standard
+        defaults.set(Date(), forKey: NotificationStorageKeys.lastFreshNewsNotificationAt)
+        defaults.set(article.url.absoluteString, forKey: NotificationStorageKeys.lastFreshNewsArticleURL)
+    }
+
+    private func buildFreshArticleNotificationContent(
+        for article: Article,
+        feedTitle: String,
+        totalNewCount: Int
+    ) async -> UNMutableNotificationContent {
+        let content = UNMutableNotificationContent()
+        content.title = freshNewsNotificationTitle(feedTitle: feedTitle, totalNewCount: totalNewCount)
+        content.subtitle = article.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        content.body = await freshNewsNotificationBody(for: article, feedTitle: feedTitle, totalNewCount: totalNewCount)
+        content.sound = .default
+
+        if let deepLink = articleDeepLink(for: article) {
+            content.userInfo["fluxDeepLink"] = deepLink.absoluteString
+        }
+
+        return content
+    }
+
+    private func articleDeepLink(for article: Article) -> URL? {
+        var components = URLComponents()
+        components.scheme = "flux"
+        components.host = "article"
+        components.queryItems = [
+            URLQueryItem(name: "url", value: article.url.absoluteString),
+            URLQueryItem(name: "reader", value: "1")
+        ]
+        return components.url
+    }
+
+    private func freshNewsNotificationTitle(feedTitle: String, totalNewCount: Int) -> String {
+        let trimmedFeed = feedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        switch LocalizationManager.shared.currentLanguage {
+        case .french:
+            return trimmedFeed.isEmpty ? "Actu fraîche dans Flux" : "Actu fraîche · \(trimmedFeed)"
+        case .english:
+            return trimmedFeed.isEmpty ? "Fresh update in Flux" : "Fresh update · \(trimmedFeed)"
+        case .spanish:
+            return trimmedFeed.isEmpty ? "Novedad reciente en Flux" : "Novedad reciente · \(trimmedFeed)"
+        case .german:
+            return trimmedFeed.isEmpty ? "Frisches Update in Flux" : "Frisches Update · \(trimmedFeed)"
+        case .italian:
+            return trimmedFeed.isEmpty ? "Novità fresca in Flux" : "Novità fresca · \(trimmedFeed)"
+        case .portuguese:
+            return trimmedFeed.isEmpty ? "Novidade fresca no Flux" : "Novidade fresca · \(trimmedFeed)"
+        case .japanese:
+            return trimmedFeed.isEmpty ? "Fluxの最新ニュース" : "最新ニュース・\(trimmedFeed)"
+        case .chinese:
+            return trimmedFeed.isEmpty ? "Flux 有新动态" : "新鲜资讯 · \(trimmedFeed)"
+        case .korean:
+            return trimmedFeed.isEmpty ? "Flux 새 소식" : "새 소식 · \(trimmedFeed)"
+        case .russian:
+            return trimmedFeed.isEmpty ? "Свежая новость в Flux" : "Свежая новость · \(trimmedFeed)"
+        }
+    }
+
+    private func freshNewsNotificationBody(
+        for article: Article,
+        feedTitle: String,
+        totalNewCount: Int
+    ) async -> String {
+        if let generated = await generateFreshNewsNotificationBody(for: article, feedTitle: feedTitle, totalNewCount: totalNewCount) {
+            return generated
+        }
+        return fallbackFreshNewsNotificationBody(for: article, feedTitle: feedTitle, totalNewCount: totalNewCount)
+    }
+
+    private func fallbackFreshNewsNotificationBody(
+        for article: Article,
+        feedTitle: String,
+        totalNewCount: Int
+    ) -> String {
+        let teaser = Self.firstSentences(
+            from: article.summary ?? article.contentText ?? article.title,
+            maxCharacters: 110
+        )
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasMore = totalNewCount > 1
+
+        switch LocalizationManager.shared.currentLanguage {
+        case .french:
+            return hasMore ? "\(teaser) Ouvre Flux pour voir aussi le reste." : "\(teaser) Ouvre Flux pour le lire."
+        case .english:
+            return hasMore ? "\(teaser) Open Flux to catch the rest too." : "\(teaser) Open Flux to read it."
+        case .spanish:
+            return hasMore ? "\(teaser) Abre Flux para ver también lo demás." : "\(teaser) Abre Flux para leerlo."
+        case .german:
+            return hasMore ? "\(teaser) Öffne Flux, um auch den Rest zu sehen." : "\(teaser) Öffne Flux, um es zu lesen."
+        case .italian:
+            return hasMore ? "\(teaser) Apri Flux per vedere anche il resto." : "\(teaser) Apri Flux per leggerlo."
+        case .portuguese:
+            return hasMore ? "\(teaser) Abra o Flux para ver o resto também." : "\(teaser) Abra o Flux para ler."
+        case .japanese:
+            return hasMore ? "\(teaser) 続きはFluxでどうぞ。" : "\(teaser) Fluxで読めます。"
+        case .chinese:
+            return hasMore ? "\(teaser) 打开 Flux 看看还有什么新内容。" : "\(teaser) 打开 Flux 阅读。"
+        case .korean:
+            return hasMore ? "\(teaser) Flux에서 나머지도 확인해 보세요." : "\(teaser) Flux에서 읽어보세요."
+        case .russian:
+            return hasMore ? "\(teaser) Откройте Flux, чтобы посмотреть и остальное." : "\(teaser) Откройте Flux, чтобы прочитать."
+        }
+    }
+
+    private func freshNewsLanguageDirective() -> String {
+        switch LocalizationManager.shared.currentLanguage {
+        case .french: return "Réponds exclusivement en français."
+        case .english: return "Answer exclusively in English."
+        case .spanish: return "Responde exclusivamente en español."
+        case .german: return "Antworte ausschließlich auf Deutsch."
+        case .italian: return "Rispondi esclusivamente in italiano."
+        case .portuguese: return "Responda exclusivamente em português."
+        case .japanese: return "日本語でのみ回答してください。"
+        case .chinese: return "请仅使用中文回答。"
+        case .korean: return "한국어로만 답변하세요."
+        case .russian: return "Отвечай исключительно на русском языке."
+        }
+    }
+
+    private func generateFreshNewsNotificationBody(
+        for article: Article,
+        feedTitle: String,
+        totalNewCount: Int
+    ) async -> String? {
+        #if canImport(FoundationModels)
+        if #available(macOS 26.0, iOS 26.0, *) {
+            let model = SystemLanguageModel.default
+            guard case .available = model.availability else { return nil }
+
+            let context = Self.firstSentences(
+                from: article.summary ?? article.contentText ?? article.title,
+                maxCharacters: 220
+            )
+
+            let prompt = """
+            \(freshNewsLanguageDirective())
+            Tu écris une notification locale très courte pour faire revenir l'utilisateur dans l'app Flux.
+            Contraintes:
+            - une seule phrase
+            - 8 à 18 mots
+            - ton simple, vivant, naturel
+            - pas de guillemets
+            - pas d'emoji
+            - pas de markdown
+            - ne commence pas par le nom du média
+            - donne envie d'ouvrir l'article, sans exagération
+
+            Source: \(feedTitle.isEmpty ? "Flux" : feedTitle)
+            Titre: \(article.title)
+            Contexte: \(context)
+            Nombre de nouvelles actus cette fois: \(totalNewCount)
+            """
+
+            do {
+                let session = LanguageModelSession(
+                    model: model,
+                    instructions: { "Tu rédiges des notifications locales très courtes et très naturelles. \(freshNewsLanguageDirective())" }
+                )
+                let response = try await session.respond(to: prompt)
+                let candidate = response.content
+                    .replacingOccurrences(of: "\n", with: " ")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+
+                guard candidate.isEmpty == false else { return nil }
+                return String(candidate.prefix(140))
+            } catch {
+                logger.error("Fresh news notification generation failed: \(error.localizedDescription, privacy: .public)")
+                return nil
+            }
+        }
+        #endif
+
+        return nil
     }
 
     private func notifyNewsletterReady() {
@@ -3331,6 +3956,10 @@ final class FeedService {
         }
     }
 
+    func fetchReadableArticleText(from url: URL) async -> String? {
+        await fetchArticleText(from: url)
+    }
+
     #if canImport(AVFoundation)
     func stopSpeaking() {
         // Stopper la lecture audio si en cours
@@ -3389,7 +4018,7 @@ final class FeedService {
     // Met à jour uniquement le flag de génération audio de la newsletter
     func updateNewsletterAudioEnabled(_ enabled: Bool) {
         do {
-            let settings = (try modelContext.fetch(FetchDescriptor<Settings>()).first) ?? Settings()
+            let settings = try ensureSingletonSettingsRecord()
             var existingAIEnabled: Bool? = nil
             if let data = settings.aiProviderConfig,
                let cfg = try? JSONDecoder().decode(AIProviderConfig.self, from: data) {
@@ -3397,9 +4026,6 @@ final class FeedService {
             }
             let newCfg = AIProviderConfig(aiEnabled: existingAIEnabled, newsletterAudioEnabled: enabled)
             settings.aiProviderConfig = try JSONEncoder().encode(newCfg)
-            if ((try? modelContext.fetch(FetchDescriptor<Settings>()))?.isEmpty ?? true) {
-                modelContext.insert(settings)
-            }
             try modelContext.save()
         } catch {
             logger.error("Failed to update newsletterAudioEnabled: \(error.localizedDescription)")
@@ -5033,7 +5659,7 @@ final class FeedService {
         // Paramètres (optionnel)
         let settingsData: SettingsExportData?
         do {
-            if let settings = try modelContext.fetch(FetchDescriptor<Settings>()).first {
+            let settings = try ensureSingletonSettingsRecord()
                 settingsData = SettingsExportData(
                     theme: settings.theme,
                     ttsVoice: settings.ttsVoice,
@@ -5042,14 +5668,17 @@ final class FeedService {
                     aiProviderConfig: settings.aiProviderConfig,
                     imageScrapingEnabled: settings.imageScrapingEnabled,
                     windowBlurEnabled: settings.windowBlurEnabled,
+                    windowBlurTintOpacity: settings.windowBlurTintOpacity,
                     hideTitleOnThumbnails: settings.hideTitleOnThumbnails,
-                    filterAdsEnabled: settings.filterAdsEnabled
+                    filterAdsEnabled: settings.filterAdsEnabled,
+                    notificationsEnabled: settings.notificationsEnabled,
+                    signalNotificationsEnabled: settings.signalNotificationsEnabled,
+                    hapticsEnabled: settings.hapticsEnabled,
+                    alwaysOpenInBrowser: settings.alwaysOpenInBrowser,
+                    badgeReadLaterEnabled: settings.badgeReadLaterEnabled,
+                    signalFavoriteEventIds: settings.signalFavoriteEventIds
                 )
                 logger.info("Loaded settings for export")
-            } else {
-                settingsData = nil
-                logger.info("No settings found for export")
-            }
         } catch {
             logger.error("Failed to fetch settings: \(error)")
             settingsData = nil
@@ -5170,7 +5799,7 @@ final class FeedService {
         
         // Importer les paramètres (optionnel)
         if let settingsData = configuration.settings {
-            if let existingSettings = try? modelContext.fetch(FetchDescriptor<Settings>()).first {
+            if let existingSettings = try? ensureSingletonSettingsRecord() {
                 // Mettre à jour les paramètres existants
                 existingSettings.theme = settingsData.theme
                 existingSettings.ttsVoice = settingsData.ttsVoice
@@ -5179,14 +5808,31 @@ final class FeedService {
                 existingSettings.aiProviderConfig = settingsData.aiProviderConfig
                 existingSettings.imageScrapingEnabled = settingsData.imageScrapingEnabled
                 existingSettings.windowBlurEnabled = settingsData.windowBlurEnabled
+                existingSettings.windowBlurTintOpacity = settingsData.windowBlurTintOpacity
                 existingSettings.hideTitleOnThumbnails = settingsData.hideTitleOnThumbnails
                 if let filterAds = settingsData.filterAdsEnabled {
                     existingSettings.filterAdsEnabled = filterAds
                 }
+                if let notificationsEnabled = settingsData.notificationsEnabled {
+                    existingSettings.notificationsEnabled = notificationsEnabled
+                }
+                if let signalNotificationsEnabled = settingsData.signalNotificationsEnabled {
+                    existingSettings.signalNotificationsEnabled = signalNotificationsEnabled
+                }
+                if let hapticsEnabled = settingsData.hapticsEnabled {
+                    existingSettings.hapticsEnabled = hapticsEnabled
+                }
+                if let alwaysOpenInBrowser = settingsData.alwaysOpenInBrowser {
+                    existingSettings.alwaysOpenInBrowser = alwaysOpenInBrowser
+                }
+                if let badgeReadLaterEnabled = settingsData.badgeReadLaterEnabled {
+                    existingSettings.badgeReadLaterEnabled = badgeReadLaterEnabled
+                }
+                existingSettings.signalFavoriteEventIds = settingsData.signalFavoriteEventIds ?? []
             } else {
                 // Créer de nouveaux paramètres
                 let newSettings = Settings(
-                    id: UUID(),
+                    id: Settings.sharedID,
                     theme: settingsData.theme,
                     ttsVoice: settingsData.ttsVoice,
                     ttsRate: settingsData.ttsRate,
@@ -5194,8 +5840,15 @@ final class FeedService {
                     aiProviderConfig: settingsData.aiProviderConfig,
                     imageScrapingEnabled: settingsData.imageScrapingEnabled,
                     windowBlurEnabled: settingsData.windowBlurEnabled,
+                    windowBlurTintOpacity: settingsData.windowBlurTintOpacity,
                     hideTitleOnThumbnails: settingsData.hideTitleOnThumbnails,
-                    filterAdsEnabled: settingsData.filterAdsEnabled ?? false
+                    filterAdsEnabled: settingsData.filterAdsEnabled ?? false,
+                    notificationsEnabled: settingsData.notificationsEnabled,
+                    signalNotificationsEnabled: settingsData.signalNotificationsEnabled ?? true,
+                    hapticsEnabled: settingsData.hapticsEnabled,
+                    alwaysOpenInBrowser: settingsData.alwaysOpenInBrowser,
+                    badgeReadLaterEnabled: settingsData.badgeReadLaterEnabled,
+                    signalFavoriteEventIds: settingsData.signalFavoriteEventIds ?? []
                 )
                 modelContext.insert(newSettings)
             }
@@ -5203,6 +5856,7 @@ final class FeedService {
         
         // Sauvegarder tous les changements
         try modelContext.save()
+        normalizeAndApplySyncedSettings()
 
         // Recharger les données
         loadFeeds()

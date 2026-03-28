@@ -48,3 +48,15 @@ final class DeepLinkRouter {
         return pendingURLs.removeFirst()
     }
 }
+
+enum FluxDeepLink {
+    static func signalURL(eventId: String?) -> URL? {
+        var components = URLComponents()
+        components.scheme = "flux"
+        components.host = "signals"
+        if let eventId, eventId.isEmpty == false {
+            components.queryItems = [URLQueryItem(name: "eventId", value: eventId)]
+        }
+        return components.url
+    }
+}

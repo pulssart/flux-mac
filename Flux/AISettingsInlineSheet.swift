@@ -5,7 +5,6 @@ import SwiftUI
 import SwiftData
 
 struct AISettingsInlineSheet: View {
-    @Environment(\.modelContext) private var modelContext
     @Environment(FeedService.self) private var feedService
     @Binding var isPresented: Bool
     @Binding var showOnboarding: Bool
@@ -13,10 +12,12 @@ struct AISettingsInlineSheet: View {
     @AppStorage("windowBlurTintOpacity") private var windowBlurTintOpacity: Double = 0.48
     @AppStorage("hideTitleOnThumbnails") private var hideTitleOnThumbnails: Bool = false
     @AppStorage("notificationsEnabled") private var notificationsEnabled: Bool = false
+    @AppStorage("signalNotificationsEnabled") private var signalNotificationsEnabled: Bool = true
     @AppStorage("hapticsEnabled") private var hapticsEnabled: Bool = true
     @AppStorage("reader.alwaysOpenInBrowser") private var alwaysOpenInBrowser: Bool = false
     @AppStorage("badgeReadLaterEnabled") private var badgeReadLaterEnabled: Bool = true
     @AppStorage("filterAdsEnabled") private var filterAdsEnabled: Bool = false
+    @State private var isConfigurationSectionExpanded = false
     @State private var selectedLanguage: SupportedLanguage = .english
     @State private var error: String?
     #if os(macOS)
@@ -65,9 +66,108 @@ struct AISettingsInlineSheet: View {
         "\(Int(min(max(windowBlurTintOpacity, 0), 0.99) * 100))%"
     }
 
+    private var iCloudSyncTitle: String {
+        switch LocalizationManager.shared.currentLanguage {
+        case .french:
+            return "Synchronisation iCloud"
+        default:
+            return "iCloud sync"
+        }
+    }
+
+    private var iCloudSyncEnabledText: String {
+        switch LocalizationManager.shared.currentLanguage {
+        case .french:
+            return "Activée"
+        default:
+            return "Enabled"
+        }
+    }
+
+    private var iCloudSyncUnavailableText: String {
+        switch LocalizationManager.shared.currentLanguage {
+        case .french:
+            return "Indisponible"
+        default:
+            return "Unavailable"
+        }
+    }
+
+    private var iCloudSyncDisabledText: String {
+        switch LocalizationManager.shared.currentLanguage {
+        case .french:
+            return "Désactivée"
+        default:
+            return "Disabled"
+        }
+    }
+
+    private var iCloudSyncCheckingText: String {
+        switch LocalizationManager.shared.currentLanguage {
+        case .french:
+            return "Vérification…"
+        default:
+            return "Checking…"
+        }
+    }
+
+    private var iCloudSyncDetailText: String {
+        switch LocalizationManager.shared.currentLanguage {
+        case .french:
+            return "Flux, dossiers et réglages compatibles sont synchronisés entre Mac, iPhone et iPad."
+        default:
+            return "Feeds, folders and compatible settings sync between Mac, iPhone and iPad."
+        }
+    }
+
+    private var iCloudStatusColor: Color {
+        switch feedService.iCloudSyncStatus {
+        case .enabled:
+            return .green
+        case .checking:
+            return .orange
+        case .unavailable, .disabled:
+            return .secondary
+        }
+    }
+
+    private var iCloudStatusText: String {
+        switch feedService.iCloudSyncStatus {
+        case .enabled:
+            return iCloudSyncEnabledText
+        case .checking:
+            return iCloudSyncCheckingText
+        case .unavailable:
+            return iCloudSyncUnavailableText
+        case .disabled:
+            return iCloudSyncDisabledText
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(lm.localizedString(.settings)).font(.title3).bold()
+            HStack(alignment: .top, spacing: 12) {
+                Circle()
+                    .fill(iCloudStatusColor)
+                    .frame(width: 10, height: 10)
+                    .padding(.top, 5)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(iCloudSyncTitle)
+                            .font(.headline)
+                        Text(iCloudStatusText)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(iCloudStatusColor)
+                    }
+                    Text(iCloudSyncDetailText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            Divider()
+            #if os(macOS)
             Toggle(lm.localizedString(.windowBlurToggle), isOn: $windowBlurEnabled)
                 .toggleStyle(LeadingSwitchToggleStyle())
             if windowBlurEnabled {
@@ -97,11 +197,19 @@ struct AISettingsInlineSheet: View {
                 .padding(.bottom, 2)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
+            #endif
             Toggle(lm.localizedString(.hideTitleOnThumbnails), isOn: $hideTitleOnThumbnails)
                 .toggleStyle(LeadingSwitchToggleStyle())
-            Toggle(lm.localizedString(.notificationsToggle), isOn: $notificationsEnabled)
+            Toggle(lm.localizedString(.notificationsNewsToggle), isOn: $notificationsEnabled)
                 .toggleStyle(LeadingSwitchToggleStyle())
                 .onChange(of: notificationsEnabled) { _, newValue in
+                    if newValue {
+                        feedService.requestNotificationPermissionIfNeeded()
+                    }
+                }
+            Toggle(lm.localizedString(.notificationsSignalsToggle), isOn: $signalNotificationsEnabled)
+                .toggleStyle(LeadingSwitchToggleStyle())
+                .onChange(of: signalNotificationsEnabled) { _, newValue in
                     if newValue {
                         feedService.requestNotificationPermissionIfNeeded()
                     }
@@ -140,9 +248,21 @@ struct AISettingsInlineSheet: View {
             
             Divider()
             
-            // Section Import/Export
-            ConfigurationImportExportView(language: selectedLanguage)
-                .environment(feedService)
+            DisclosureGroup(isExpanded: $isConfigurationSectionExpanded) {
+                ConfigurationImportExportView(language: selectedLanguage, showsHeader: false)
+                    .environment(feedService)
+                    .padding(.top, 8)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.up.arrow.down.circle")
+                        .foregroundStyle(.blue)
+                    Text(lm.localizedString(.configuration))
+                        .font(.headline)
+                }
+            }
+            .disclosureGroupStyle(.automatic)
+            .tint(.primary)
+            .environment(\.layoutDirection, .leftToRight)
             
             Divider()
             
@@ -211,6 +331,7 @@ struct AISettingsInlineSheet: View {
                 }
             }
             .buttonStyle(.plain)
+
             #endif
 
             Button(action: {
@@ -252,12 +373,23 @@ struct AISettingsInlineSheet: View {
         }
         #endif
         .onAppear {
+            Task {
+                await feedService.refreshICloudSyncStatus()
+            }
             // Charger la langue actuelle depuis les paramètres
-            if let settings = try? modelContext.fetch(FetchDescriptor<Settings>()).first {
+            if let settings = try? feedService.ensureSingletonSettingsRecord() {
                 if let preferredLang = settings.preferredLangs.first {
                     selectedLanguage = SupportedLanguage(rawValue: preferredLang) ?? .english
                 }
+                windowBlurEnabled = settings.windowBlurEnabled ?? windowBlurEnabled
+                windowBlurTintOpacity = settings.windowBlurTintOpacity ?? windowBlurTintOpacity
+                hideTitleOnThumbnails = settings.hideTitleOnThumbnails ?? hideTitleOnThumbnails
                 filterAdsEnabled = settings.filterAdsEnabled ?? false
+                notificationsEnabled = settings.notificationsEnabled ?? notificationsEnabled
+                signalNotificationsEnabled = settings.signalNotificationsEnabled ?? signalNotificationsEnabled
+                hapticsEnabled = settings.hapticsEnabled ?? hapticsEnabled
+                alwaysOpenInBrowser = settings.alwaysOpenInBrowser ?? alwaysOpenInBrowser
+                badgeReadLaterEnabled = settings.badgeReadLaterEnabled ?? badgeReadLaterEnabled
             } else {
                 selectedLanguage = .english // Langue par défaut
             }
@@ -274,26 +406,22 @@ struct AISettingsInlineSheet: View {
     }
 
     private func save() {
-        do {
-            // Sauvegarder la langue sélectionnée
-            let settings = (try modelContext.fetch(FetchDescriptor<Settings>()).first) ?? Settings()
+        feedService.updateSyncedPreferences { settings in
             settings.preferredLangs = [selectedLanguage.rawValue]
+            settings.windowBlurEnabled = windowBlurEnabled
+            settings.windowBlurTintOpacity = windowBlurTintOpacity
+            settings.hideTitleOnThumbnails = hideTitleOnThumbnails
             settings.filterAdsEnabled = filterAdsEnabled
-
-            // Sauvegarder les paramètres
-            if ((try? modelContext.fetch(FetchDescriptor<Settings>()))?.isEmpty ?? true) {
-                modelContext.insert(settings)
-            }
-            try modelContext.save()
-            
-            // Mettre à jour la langue dans le gestionnaire de localisation
-            LocalizationManager.shared.currentLanguage = selectedLanguage
-            error = nil
-            isPresented = false
-            
-        } catch {
-            self.error = "\(lm.localizedString(.saveError)): \(error.localizedDescription)"
+            settings.notificationsEnabled = notificationsEnabled
+            settings.signalNotificationsEnabled = signalNotificationsEnabled
+            settings.hapticsEnabled = hapticsEnabled
+            settings.alwaysOpenInBrowser = alwaysOpenInBrowser
+            settings.badgeReadLaterEnabled = badgeReadLaterEnabled
         }
+        
+        LocalizationManager.shared.currentLanguage = selectedLanguage
+        error = nil
+        isPresented = false
     }
 }
 

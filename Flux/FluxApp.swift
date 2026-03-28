@@ -9,13 +9,16 @@ import SwiftUI
 import SwiftData
 #if os(macOS)
 import AppKit
+#if canImport(UserNotifications)
+import UserNotifications
+#endif
 #endif
 #if os(iOS)
 import BackgroundTasks
 #endif
 
 #if os(macOS)
-final class FluxAppDelegate: NSObject, NSApplicationDelegate {
+final class FluxAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var windowDelegateHandler: ZoomGuardWindowDelegate?
 
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -27,12 +30,35 @@ final class FluxAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if canImport(UserNotifications)
+        UNUserNotificationCenter.current().delegate = self
+        #endif
         // Install zoom guard on main window to prevent infinite recursion on macOS Tahoe
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let window = NSApplication.shared.mainWindow else { return }
             let handler = ZoomGuardWindowDelegate(original: window.delegate)
             self?.windowDelegateHandler = handler
             window.delegate = handler
+        }
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        defer { completionHandler() }
+
+        guard
+            let deepLinkValue = response.notification.request.content.userInfo["fluxDeepLink"] as? String,
+            let deepLinkURL = URL(string: deepLinkValue)
+        else {
+            return
+        }
+
+        Task { @MainActor in
+            NSApp.activate(ignoringOtherApps: true)
+            DeepLinkRouter.shared.receive(deepLinkURL)
         }
     }
 }
@@ -84,25 +110,87 @@ struct FluxApp: App {
     #if os(macOS)
     @NSApplicationDelegateAdaptor(FluxAppDelegate.self) private var appDelegate
     #endif
+    @Environment(\.scenePhase) private var scenePhase
     private let container: ModelContainer?
     private let context: ModelContext?
     private let feedService: FeedService?
+    private let polymarketService: PolymarketService
     private let deepLinkRouter: DeepLinkRouter
+    private let isICloudSyncConfigured: Bool
 
     init() {
         self.deepLinkRouter = DeepLinkRouter.shared
+        self.polymarketService = PolymarketService()
         do {
-            let container = try ModelContainer(for: Feed.self, Article.self, ReaderNote.self, Suggestion.self, Settings.self, Folder.self)
+            let schema = Schema([
+                Feed.self,
+                Article.self,
+                ReaderNote.self,
+                Suggestion.self,
+                Settings.self,
+                Folder.self,
+                SignalFavorite.self
+            ])
+            let cloudConfiguration = ModelConfiguration(
+                "Flux",
+                schema: schema,
+                cloudKitDatabase: .automatic
+            )
+            let container = try ModelContainer(for: schema, configurations: [cloudConfiguration])
+            let context = ModelContext(container)
+
             self.container = container
-            self.context = ModelContext(container)
-            self.feedService = FeedService(context: self.context!)
-            // Appliquer les defaults pour nouveaux utilisateurs si nécessaire
-            DefaultsInitializer.applyIfNeeded(context: self.context!)
+            self.context = context
+            self.isICloudSyncConfigured = true
+            let feedService = FeedService(context: context, isICloudSyncConfigured: true)
+            feedService.iCloudSyncDiagnosticMessage = "Le stockage iCloud a été initialisé."
+            self.feedService = feedService
+            DefaultsInitializer.applyIfNeeded(context: context)
         } catch {
-            self.container = nil
-            self.context = nil
-            self.feedService = nil
-            print("ModelContainer failed to load: \(error)")
+            do {
+                let schema = Schema([
+                    Feed.self,
+                    Article.self,
+                    ReaderNote.self,
+                    Suggestion.self,
+                    Settings.self,
+                    Folder.self,
+                    SignalFavorite.self
+                ])
+                let fallbackConfiguration = ModelConfiguration(
+                    "Flux",
+                    schema: schema,
+                    cloudKitDatabase: .none
+                )
+                let container = try ModelContainer(for: schema, configurations: [fallbackConfiguration])
+                let context = ModelContext(container)
+
+                self.container = container
+                self.context = context
+                self.isICloudSyncConfigured = false
+                let feedService = FeedService(context: context, isICloudSyncConfigured: false)
+                let nsError = error as NSError
+                let reason = nsError.userInfo[NSLocalizedFailureReasonErrorKey] as? String
+                let suggestion = nsError.userInfo[NSLocalizedRecoverySuggestionErrorKey] as? String
+                let details = [
+                    error.localizedDescription,
+                    reason,
+                    suggestion,
+                    "\(nsError.domain) (\(nsError.code))"
+                ]
+                .compactMap { $0 }
+                .joined(separator: " | ")
+                feedService.iCloudSyncDiagnosticMessage = "Le stockage iCloud n’a pas pu démarrer: \(details)"
+                self.feedService = feedService
+                DefaultsInitializer.applyIfNeeded(context: context)
+                print("Cloud-backed ModelContainer failed to load, falling back to local storage: \(error)")
+            } catch {
+                self.container = nil
+                self.context = nil
+                self.feedService = nil
+                self.isICloudSyncConfigured = false
+                print("ModelContainer failed to load: \(error)")
+            }
         }
     }
 
@@ -116,15 +204,33 @@ struct FluxApp: App {
                 #if os(macOS)
                 ContentView()
                     .environment(feedService)
+                    .environment(polymarketService)
                     .environment(deepLinkRouter)
                     .modelContainer(container)
                     .frame(minWidth: 420, minHeight: 500)
+                    .onAppear {
+                        polymarketService.startMonitoring()
+                        let defaults = UserDefaults.standard
+                        let newsNotificationsEnabled = defaults.bool(forKey: "notificationsEnabled")
+                        let signalNotificationsEnabled: Bool = {
+                            if defaults.object(forKey: "signalNotificationsEnabled") == nil {
+                                return true
+                            }
+                            return defaults.bool(forKey: "signalNotificationsEnabled")
+                        }()
+
+                        if newsNotificationsEnabled || signalNotificationsEnabled {
+                            feedService.requestNotificationPermissionIfNeeded()
+                        }
+                    }
                 #else
                 ContentView()
                     .environment(feedService)
+                    .environment(polymarketService)
                     .environment(deepLinkRouter)
                     .modelContainer(container)
                     .onAppear {
+                        polymarketService.startMonitoring()
                         registerBackgroundRefresh()
                         scheduleBackgroundRefresh()
                     }
@@ -142,6 +248,11 @@ struct FluxApp: App {
                     NotificationCenter.default.post(name: .openSettings, object: nil)
                 }
                 .keyboardShortcut(",", modifiers: [.command])
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                polymarketService.refreshIfNeeded()
             }
         }
         #endif
