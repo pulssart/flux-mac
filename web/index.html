@@ -1,180 +1,320 @@
 <!doctype html>
-<html lang="fr" data-page="home">
+<html lang="fr" data-hero="centre" data-title-font="serif">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Flux | L’app Mac calme pour construire son actualité</title>
-  <meta
-    name="description"
-    content="Flux réunit RSS, blogs, newsletters et YouTube dans une expérience macOS locale, intelligente et calme."
-  />
-  <meta property="og:type" content="website" />
-  <meta property="og:title" content="Flux" />
-  <meta
-    property="og:description"
-    content="Construire son actualité dans une app intelligente et calme."
-  />
+
+  <title>Flux — Lecteur RSS pour Mac & iPad</title>
+  <meta name="description" content="Flux réunit RSS, blogs, newsletters et YouTube dans une app native Mac & iPad. Locale, sans compte, sans algorithme. Pensée localement par les modèles d'Apple." />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="canonical" href="https://pulssart.github.io/flux-mac/" />
+
+  <!-- Favicons -->
   <link rel="icon" type="image/png" href="assets/flux-icon.png" />
+  <link rel="apple-touch-icon" href="assets/flux-icon.png" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Flux" />
+  <meta property="og:title" content="Flux — Lecteur RSS pour Mac & iPad" />
+  <meta property="og:description" content="Un web lisible, sur votre Mac. RSS, blogs, newsletters et YouTube dans une app native, locale et sans algorithme." />
+  <meta property="og:url" content="https://pulssart.github.io/flux-mac/" />
+  <meta property="og:image" content="https://pulssart.github.io/flux-mac/assets/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:locale" content="fr_FR" />
+  <meta property="og:locale:alternate" content="en_US" />
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Flux — Lecteur RSS pour Mac & iPad" />
+  <meta name="twitter:description" content="Un web lisible, sur votre Mac. RSS, blogs, newsletters et YouTube dans une app native, locale et sans algorithme." />
+  <meta name="twitter:image" content="https://pulssart.github.io/flux-mac/assets/og.png" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="styles.css" />
+
+  <!-- Données structurées -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Flux",
+    "applicationCategory": "NewsApplication",
+    "operatingSystem": "macOS, iPadOS",
+    "description": "Lecteur RSS natif pour Mac et iPad. Local, sans compte, sans algorithme.",
+    "url": "https://apps.apple.com/fr/app/flux-smart-rss-reader/id6752223666"
+  }
+  </script>
 </head>
 <body>
-  <div class="site-ambience" aria-hidden="true"></div>
 
+  <!-- ============================ TOP BAR ============================ -->
   <header class="topbar">
-    <a class="brand" href="index.html" aria-label="Flux">
-      <img class="brand-mark" src="assets/flux-icon.png" alt="" />
-      <span class="brand-word">Flux</span>
-    </a>
-    <nav class="topnav" aria-label="Navigation principale">
-      <a href="support.html" data-i18n="nav_support">Support</a>
-      <a href="privacy-policy.html" data-i18n="nav_privacy">Confidentialité</a>
-    </nav>
-    <div class="lang-switch" role="group" aria-label="Language switch">
-      <button class="lang-btn active" data-lang="fr" type="button">FR</button>
-      <button class="lang-btn" data-lang="en" type="button">EN</button>
+    <div class="topbar-inner">
+      <a class="brand" href="#top" aria-label="Flux">
+        <img src="assets/flux-icon.png" alt="" width="30" height="30" />
+        <span>Flux</span>
+      </a>
+      <nav class="topnav" aria-label="Navigation">
+        <a href="#fonctionnalites" data-i18n="nav_features">Fonctionnalités</a>
+        <a href="#confidentialite" data-i18n="nav_privacy">Confidentialité</a>
+        <a href="#faq" data-i18n="nav_faq">FAQ</a>
+      </nav>
+      <div class="lang-switch" role="group" aria-label="Langue">
+        <button class="lang-btn active" data-lang="fr" type="button">FR</button>
+        <button class="lang-btn" data-lang="en" type="button">EN</button>
+      </div>
+      <a class="btn btn-primary btn-sm" href="https://apps.apple.com/fr/app/flux-smart-rss-reader/id6752223666" target="_blank" rel="noreferrer">
+        <svg class="apple" viewBox="0 0 384 512" fill="currentColor" aria-hidden="true"><path d="M318.7 268c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141 16 184.4 16 273.5q0 39.4 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.6zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
+        <span data-i18n="nav_download">Télécharger</span>
+      </a>
     </div>
   </header>
 
-  <main>
-    <section class="hero" data-reveal>
-      <div class="container hero-inner">
-        <div class="hero-copy">
-          <p class="hero-kicker" data-i18n="hero_kicker">Lecteur macOS local-first</p>
-          <div class="hero-brand" aria-label="Flux">Flux</div>
-          <h1 data-i18n="hero_title">Construire son actualité dans une app intelligente et calme.</h1>
-          <p class="hero-summary" data-i18n="hero_subtitle">
-            RSS, blogs, newsletters et YouTube réunis dans une expérience locale, lisible et sans compte.
-          </p>
+  <main id="top">
+
+    <!-- ============================ HERO (Centré) ============================ -->
+    <section class="hero container" data-reveal>
+      <div class="hero-variant v-centre">
+        <div class="hero-head">
+          <span class="hero-eyebrow-pill"><i class="dot"></i><span data-i18n="hero_pill_a">Lecteur RSS pour</span> <b data-i18n="hero_pill_b">Mac & iPad</b></span>
+          <h1 data-i18n="hero_title">Le calme retrouvé dans tout ce que vous lisez.</h1>
+          <p class="lead" data-i18n="hero_lead">Flux réunit vos sources RSS, blogs, newsletters et chaînes YouTube dans une seule app native.</p>
           <div class="cta-row">
-            <a
-              class="btn btn-primary"
-              href="https://apps.apple.com/app/id6752223666?mt=12"
-              target="_blank"
-              rel="noreferrer"
-              data-i18n="hero_cta_download"
-            >Télécharger sur le Mac App Store</a>
-            <a class="btn btn-secondary" href="support.html" data-i18n="hero_cta_support">Voir le support</a>
+            <a class="btn btn-primary" href="https://apps.apple.com/fr/app/flux-smart-rss-reader/id6752223666" target="_blank" rel="noreferrer">
+              <svg class="apple" viewBox="0 0 384 512" fill="currentColor" aria-hidden="true"><path d="M318.7 268c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141 16 184.4 16 273.5q0 39.4 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.6zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
+              <span data-i18n="cta_download">Télécharger sur le Mac App Store</span>
+            </a>
+            <a class="btn btn-ghost" href="#fonctionnalites" data-i18n="cta_discover">Découvrir l'app</a>
+          </div>
+          <div class="hero-note">
+            <span data-i18n="hero_n1">Conçu pour macOS & iPadOS</span><i class="sep"></i>
+            <span data-i18n="hero_n2">Synchronisé par iCloud</span><i class="sep"></i>
+            <span data-i18n="hero_n3">100 % local</span>
+          </div>
+        </div>
+        <div class="hero-stage">
+          <img class="app-frame" src="assets/shot-wall.png" alt="Flux — Mur de flux sur macOS" fetchpriority="high" width="1760" height="1197" />
+        </div>
+      </div>
+
+      <!-- Réassurance -->
+      <div class="assurance" data-reveal>
+        <div class="assurance-inner">
+          <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span data-i18n="as_1">Aucun compte requis</span></div>
+          <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 12h6M12 9v6"/></svg><span data-i18n="as_2">Vos données restent sur l'appareil</span></div>
+          <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16a4 4 0 0 1 0-8 5 5 0 0 1 9.6-1.5A4.5 4.5 0 0 1 17 16H7Z"/></svg><span data-i18n="as_3">Sync Mac ↔ iPad via iCloud</span></div>
+          <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M5 12H2M22 12h-3M6 6l-1.5-1.5M19.5 19.5 18 18M18 6l1.5-1.5M4.5 19.5 6 18"/><circle cx="12" cy="12" r="3.5"/></svg><span data-i18n="as_4">Pensé localement par les modèles d'Apple</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ MUR DE FLUX ============================ -->
+    <section class="section" id="fonctionnalites">
+      <div class="container split">
+        <div class="copy-col" data-reveal>
+          <p class="eyebrow" data-i18n="wall_eyebrow">Toutes vos sources</p>
+          <h2 data-i18n="wall_title">Un mur de flux, pas une timeline.</h2>
+          <p class="lead" data-i18n="wall_lead">Ajoutez un site, un flux ou une chaîne. Flux range tout dans un espace lisible.</p>
+          <div class="feature-list">
+            <div class="row"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><p><b data-i18n="wall_f1b">Détection automatique des flux</b> <span data-i18n="wall_f1">quand un site la permet, en un collage d'URL.</span></p></div>
+            <div class="row"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><p><b data-i18n="wall_f2b">Dossiers, favoris, à lire plus tard</b> <span data-i18n="wall_f2">sans empiler des vues qui ne servent à rien.</span></p></div>
+            <div class="row"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><p><b data-i18n="wall_f3b">Une vraie hiérarchie visuelle,</b> <span data-i18n="wall_f3">pas une soupe de cartes identiques.</span></p></div>
+          </div>
+        </div>
+        <div class="visual-col" data-reveal>
+          <img class="shot bleed-right" src="assets/shot-wall.png" alt="Flux — Mur de flux" loading="lazy" />
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ AUJOURD'HUI (IA) ============================ -->
+    <section class="section tint-blue">
+      <div class="container split reverse">
+        <div class="copy-col" data-reveal>
+          <span class="tag-ai"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.8 4.7L18.5 8.5 13.8 10.3 12 15l-1.8-4.7L5.5 8.5l4.7-1.8L12 2zM19 14l.9 2.3 2.3.9-2.3.9L19 20.4l-.9-2.3-2.3-.9 2.3-.9L19 14z"/></svg><span data-i18n="today_tag">Apple Intelligence · sur l'appareil</span></span>
+          <p class="eyebrow is-ai" data-i18n="today_eyebrow">Aujourd'hui</p>
+          <h2 data-i18n="today_title">Votre journée, mise au clair.</h2>
+          <p class="lead" data-i18n="today_lead">Chaque matin, Flux compose une vue d'ensemble de vos sources. La mise en forme est assurée localement par les modèles d'Apple.</p>
+          <div class="feature-list">
+            <div class="row"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><p><b data-i18n="today_f1b">Le bruit filtré,</b> <span data-i18n="today_f1">les doublons et la publicité écartés avant lecture.</span></p></div>
+            <div class="row"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><p><b data-i18n="today_f2b">Une lecture orchestrée,</b> <span data-i18n="today_f2">ordonnée par sujet plutôt que par horodatage.</span></p></div>
+          </div>
+        </div>
+        <div class="visual-col" data-reveal>
+          <img class="shot bleed-left" src="assets/shot-today.png" alt="Flux — vue Aujourd'hui" loading="lazy" />
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ SIGNAUX ============================ -->
+    <section class="section">
+      <div class="container split">
+        <div class="copy-col" data-reveal>
+          <p class="eyebrow" data-i18n="signaux_eyebrow">Signaux</p>
+          <h2 data-i18n="signaux_title">Ce que le monde anticipe, d'un coup d'œil.</h2>
+          <p class="lead" data-i18n="signaux_lead">Au-delà de vos flux, Signaux agrège les marchés prédictifs — politique, tech, finance, culture, sport.</p>
+          <div class="feature-list">
+            <div class="row"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><p><b data-i18n="signaux_f1b">Tendances en direct,</b> <span data-i18n="signaux_f1">regroupées par thème et mises à jour en continu.</span></p></div>
+            <div class="row"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><p><b data-i18n="signaux_f2b">À la une,</b> <span data-i18n="signaux_f2">les événements les plus suivis du moment.</span></p></div>
+          </div>
+        </div>
+        <div class="visual-col" data-reveal>
+          <img class="shot bleed-right" src="assets/shot-signaux.png" alt="Flux — Signaux" loading="lazy" />
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ LECTURE IMMERSIVE ============================ -->
+    <section class="section tint">
+      <div class="container split reverse">
+        <div class="copy-col" data-reveal>
+          <p class="eyebrow" data-i18n="read_eyebrow">Lecture</p>
+          <h2 data-i18n="read_title">Quand vous lisez, l'interface s'efface.</h2>
+          <p class="lead" data-i18n="read_lead">Vue immersive, contexte de l'article à portée, rythme posé. Le texte reste au centre.</p>
+          <div class="feature-list">
+            <div class="row"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><p><b data-i18n="read_f1b">Vue immersive</b> <span data-i18n="read_f1">pour les articles, sans distraction autour.</span></p></div>
+            <div class="row"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><p><b data-i18n="read_f2b">Contexte à portée :</b> <span data-i18n="read_f2">personnes, entreprises et tags cités dans l'article.</span></p></div>
+          </div>
+        </div>
+        <div class="visual-col" data-reveal>
+          <img class="shot bleed-left" src="assets/shot-immersive.png" alt="Flux — lecture immersive" loading="lazy" />
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ NEWSLETTER (bande) ============================ -->
+    <section class="section">
+      <div class="container">
+        <div class="band-newsletter" data-reveal>
+          <div class="copy-col">
+            <p class="eyebrow" data-i18n="nl_eyebrow">Newsletter</p>
+            <h2 data-i18n="nl_title">Rattraper sans rouvrir vingt onglets.</h2>
+            <p class="lead" data-i18n="nl_lead">Flux assemble une synthèse à partir de vos propres sources, mise en page comme une vraie newsletter.</p>
+          </div>
+          <div class="visual-col">
+            <img class="shot" src="assets/shot-newsletter.png" alt="Flux — Newsletter" loading="lazy" />
           </div>
         </div>
       </div>
-
-      <div class="hero-visual" aria-hidden="true">
-        <img
-          src="assets/screenshots/shot-4.png"
-          alt="Capture de Flux montrant le mur de flux sur macOS."
-          data-i18n-alt="hero_visual_alt"
-          fetchpriority="high"
-        />
-      </div>
     </section>
 
-    <section class="story container" data-reveal>
-      <div class="story-copy">
-        <p class="section-label" data-i18n="sources_label">Vos sources</p>
-        <h2 data-i18n="sources_title">Tout ce que vous suivez retrouve une forme simple.</h2>
-        <p class="section-summary" data-i18n="sources_text">
-          Flux rassemble votre web personnel dans une seule fenêtre claire, pensée pour lire avant de réagir.
-        </p>
-        <ul class="editorial-list">
-          <li data-i18n="sources_point_1">Ajoutez un site ou un flux, Flux détecte souvent la bonne source pour vous.</li>
-          <li data-i18n="sources_point_2">Retrouvez RSS, Atom, blogs, newsletters et chaînes YouTube au même endroit.</li>
-          <li data-i18n="sources_point_3">Organisez vos dossiers, vos favoris et vos habitudes de lecture sans vous disperser.</li>
-        </ul>
-      </div>
-
-      <figure class="story-visual">
-        <img
-          src="assets/screenshots/shot-2.png"
-          alt="Capture de Flux en vue classique sur macOS."
-          data-i18n-alt="sources_visual_alt"
-          loading="lazy"
-          onerror="this.onerror=null;this.src='assets/screenshots/placeholder.svg';"
-        />
-      </figure>
-    </section>
-
-    <section class="story story-reverse container" data-reveal>
-      <div class="story-copy">
-        <p class="section-label" data-i18n="reading_label">Lecture calme</p>
-        <h2 data-i18n="reading_title">Lire sans timeline, sans agitation, sans détour.</h2>
-        <p class="section-summary" data-i18n="reading_text">
-          Le contenu reste central. Les sources, le contexte et le partage restent proches, mais ne prennent jamais le dessus.
-        </p>
-        <ul class="editorial-list">
-          <li data-i18n="reading_point_1">Une lecture concentrée qui laisse la place à l’article.</li>
-          <li data-i18n="reading_point_2">Une vue immersive quand vous voulez aller au fond d’un sujet.</li>
-          <li data-i18n="reading_point_3">Un vrai rythme de lecture, pas un flux qui vous pousse.</li>
-        </ul>
-      </div>
-
-      <figure class="story-visual">
-        <img
-          src="assets/screenshots/shot-1.png"
-          alt="Capture de Flux en lecture immersive sur macOS."
-          data-i18n-alt="reading_visual_alt"
-          loading="lazy"
-          onerror="this.onerror=null;this.src='assets/screenshots/placeholder.svg';"
-        />
-      </figure>
-    </section>
-
-    <section class="story story-full container" data-reveal>
-      <div class="story-copy">
-        <p class="section-label" data-i18n="newsletter_label">Newsletter</p>
-        <h2 data-i18n="newsletter_title">Transformer ses flux en une synthèse calme et utile.</h2>
-        <p class="section-summary" data-i18n="newsletter_text">
-          Flux peut composer une newsletter à partir de vos sources pour reprendre le fil sans rouvrir vingt onglets.
-        </p>
-        <ul class="editorial-list">
-          <li data-i18n="newsletter_point_1">Une vue récapitulative faite depuis vos propres abonnements.</li>
-          <li data-i18n="newsletter_point_2">Des résumés locaux pour aller plus vite quand vous le souhaitez.</li>
-          <li data-i18n="newsletter_point_3">Une expérience pensée pour Mac, jusque dans l’audio et les notifications.</li>
-        </ul>
-      </div>
-
-      <figure class="story-visual story-visual-wide">
-        <img
-          src="assets/screenshots/shot-3.png"
-          alt="Capture de Flux montrant la vue newsletter sur macOS."
-          data-i18n-alt="newsletter_visual_alt"
-          loading="lazy"
-          onerror="this.onerror=null;this.src='assets/screenshots/placeholder.svg';"
-        />
-      </figure>
-    </section>
-
-    <section class="closing-band" data-reveal>
-      <div class="container closing-inner">
-        <div class="closing-copy">
-          <p class="section-label" data-i18n="closing_label">Pour Mac</p>
-          <h2 data-i18n="closing_title">Flux vous laisse construire votre propre actualité, à votre rythme.</h2>
-          <p class="section-summary" data-i18n="closing_text">
-            Sans compte. Sans timeline algorithmique. Juste vos sources, votre rythme et une app Mac pensée pour durer.
-          </p>
+    <!-- ============================ AU QUOTIDIEN (mini grid) ============================ -->
+    <section class="section tint">
+      <div class="container">
+        <div class="section-head center" data-reveal>
+          <p class="eyebrow" data-i18n="native_eyebrow">Au quotidien</p>
+          <h2 data-i18n="native_title">Une app qui se comporte comme un outil, pas comme une vitrine.</h2>
+          <p class="lead" data-i18n="native_lead">Native sur Mac et iPad, pensée pour durer et pour rester discrète.</p>
         </div>
+        <div class="mini-grid" data-reveal>
+          <div class="mini">
+            <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+            <h3 data-i18n="m1_t">100 % natif</h3>
+            <p data-i18n="m1_p">Construite avec SwiftUI pour macOS et iPadOS. Rapide, sobre, à sa place sur le système.</p>
+          </div>
+          <div class="mini">
+            <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 0 1 0-8 5 5 0 0 1 9.6-1.5A4.5 4.5 0 0 1 17 18H7Z"/></svg></span>
+            <h3 data-i18n="m2_t">iCloud privé</h3>
+            <p data-i18n="m2_p">Flux, dossiers et articles lus se synchronisent entre vos appareils via votre iCloud.</p>
+          </div>
+          <div class="mini">
+            <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>
+            <h3 data-i18n="m3_t">Local d'abord</h3>
+            <p data-i18n="m3_p">Pas de compte, pas de serveur. Vos lectures vivent sur votre appareil.</p>
+          </div>
+          <div class="mini">
+            <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3Z"/></svg></span>
+            <h3 data-i18n="m4_t">Sans pistage</h3>
+            <p data-i18n="m4_p">Aucune régie publicitaire, aucun profilage. Vous lisez, c'est tout.</p>
+          </div>
+        </div>
+      </div>
+    </section>
 
+    <!-- ============================ CONFIDENTIALITÉ ============================ -->
+    <section class="section" id="confidentialite">
+      <div class="container split">
+        <div class="copy-col" data-reveal>
+          <p class="eyebrow" data-i18n="privacy_eyebrow">Local d'abord</p>
+          <h2 data-i18n="privacy_title">Vos lectures restent chez vous.</h2>
+          <p class="lead" data-i18n="privacy_lead">Pas de compte à créer, pas de profil à nourrir. Vos sources et vos articles vivent sur votre appareil et se synchronisent uniquement via votre iCloud privé.</p>
+          <div class="cta-row" style="margin-top:8px">
+            <a class="btn btn-ghost" href="privacy-policy.html" data-i18n="privacy_link">Lire la politique de confidentialité</a>
+          </div>
+        </div>
+        <div class="visual-col" data-reveal>
+          <img class="shot bleed-right" src="assets/shot-library.png" alt="Flux — confidentialité et synchronisation iCloud" loading="lazy" />
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ FAQ ============================ -->
+    <section class="section tint" id="faq">
+      <div class="container">
+        <div class="section-head center" data-reveal>
+          <p class="eyebrow" data-i18n="faq_eyebrow">Questions fréquentes</p>
+          <h2 data-i18n="faq_title">Ce qu'on nous demande le plus souvent.</h2>
+        </div>
+        <div class="faq" data-reveal>
+          <details open>
+            <summary><span data-i18n="faq_1_q">Sur quels appareils fonctionne Flux ?</span><i class="plus"></i></summary>
+            <p class="answer" data-i18n="faq_1_a">Flux est une app native pour Mac et iPad. Vos flux se synchronisent via iCloud.</p>
+          </details>
+          <details>
+            <summary><span data-i18n="faq_2_q">Que vient faire l'intelligence d'Apple ici ?</span><i class="plus"></i></summary>
+            <p class="answer" data-i18n="faq_2_a">Flux s'appuie sur les modèles d'Apple, exécutés localement.</p>
+          </details>
+          <details>
+            <summary><span data-i18n="faq_3_q">Mes données quittent-elles mon appareil ?</span><i class="plus"></i></summary>
+            <p class="answer" data-i18n="faq_3_a">Non. Flux ne demande pas de compte.</p>
+          </details>
+          <details>
+            <summary><span data-i18n="faq_4_q">Quels formats de sources sont pris en charge ?</span><i class="plus"></i></summary>
+            <p class="answer" data-i18n="faq_4_a">RSS, Atom, blogs, newsletters et chaînes YouTube.</p>
+          </details>
+          <details>
+            <summary><span data-i18n="faq_5_q">Flux est-il gratuit ?</span><i class="plus"></i></summary>
+            <p class="answer" data-i18n="faq_5_a">Flux se télécharge sur le Mac App Store.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ CTA FINAL ============================ -->
+    <section class="section closing">
+      <div class="container inner" data-reveal>
+        <p class="eyebrow" style="justify-content:center" data-i18n="closing_eyebrow">Commencer</p>
+        <h2 data-i18n="closing_title">Reprenez le fil, à votre rythme.</h2>
         <div class="cta-row">
-          <a
-            class="btn btn-primary"
-            href="https://apps.apple.com/app/id6752223666?mt=12"
-            target="_blank"
-            rel="noreferrer"
-            data-i18n="closing_cta_download"
-          >Télécharger Flux</a>
-          <a class="btn btn-secondary" href="support.html" data-i18n="closing_cta_support">Besoin d’aide ?</a>
+          <a class="btn btn-primary" href="https://apps.apple.com/fr/app/flux-smart-rss-reader/id6752223666" target="_blank" rel="noreferrer">
+            <svg class="apple" viewBox="0 0 384 512" fill="currentColor" aria-hidden="true"><path d="M318.7 268c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141 16 184.4 16 273.5q0 39.4 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.6zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
+            <span data-i18n="cta_download">Télécharger sur le Mac App Store</span>
+          </a>
         </div>
+        <div class="hero-note"><span data-i18n="closing_n">Sur le Mac App Store · Mac & iPad · 100 % local</span></div>
       </div>
     </section>
   </main>
 
-  <footer class="site-footer container">
-    <span data-i18n="footer_copy">© Flux</span>
-    <div class="footer-links">
-      <a href="support.html" data-i18n="nav_support">Support</a>
-      <a href="privacy-policy.html" data-i18n="nav_privacy">Confidentialité</a>
+  <!-- ============================ FOOTER ============================ -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <a class="brand" href="#top"><img src="assets/flux-icon.png" alt="" width="24" height="24" style="width:24px;height:24px;border-radius:6px" /><span data-i18n="footer_tagline">Un web lisible, sur votre Mac.</span></a>
+        <div class="footer-links">
+          <a href="#fonctionnalites" data-i18n="footer_features">Fonctionnalités</a>
+          <a href="#confidentialite" data-i18n="footer_privacy">Confidentialité</a>
+          <a href="#faq" data-i18n="footer_faq">FAQ</a>
+          <a href="https://apps.apple.com/fr/app/flux-smart-rss-reader/id6752223666" target="_blank" rel="noreferrer" data-i18n="footer_appstore">Mac App Store</a>
+        </div>
+      </div>
+      <p class="footer-meta" data-i18n="footer_copy">© 2026 Flux. Conçu pour macOS & iPadOS.</p>
     </div>
   </footer>
 
-  <script src="script.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
