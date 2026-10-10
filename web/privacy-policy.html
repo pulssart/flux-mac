@@ -21,7 +21,7 @@
       <nav class="topnav" aria-label="Navigation">
         <a href="index.html#fonctionnalites">Fonctionnalités</a>
         <a href="index.html#confidentialite">Confidentialité</a>
-        <a href="index.html#faq">FAQ</a>
+        <a href="support.html">Support</a>
       </nav>
       <a class="btn btn-primary btn-sm" href="https://apps.apple.com/fr/app/flux-smart-rss-reader/id6752223666" target="_blank" rel="noreferrer">
         <svg class="apple" viewBox="0 0 384 512" fill="currentColor" aria-hidden="true"><path d="M318.7 268c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141 16 184.4 16 273.5q0 39.4 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.6zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
@@ -37,7 +37,7 @@
           <span class="hero-eyebrow-pill"><i class="dot"></i><span>Confidentialité</span></span>
           <h1>Flux traite ce qui est nécessaire pour faire tourner l'app.</h1>
           <p class="lead">La plupart des données restent locales sur votre appareil. Cette page résume ce que Flux utilise, pourquoi, et combien de temps.</p>
-          <div class="hero-note"><span>Dernière mise à jour. 26 février 2026.</span></div>
+          <div class="hero-note"><span>Dernière mise à jour. 10 octobre 2026.</span></div>
         </div>
       </div>
     </section>
@@ -62,19 +62,25 @@
         </article>
         <article class="mini">
           <h3>5. Stockage</h3>
-          <p>Les données sont principalement stockées localement sur votre appareil. Flux ne demande pas la création d'un compte utilisateur pour fonctionner.</p>
+          <p>Les flux, articles, favoris, notes et préférences sont stockés sur votre appareil. La synchronisation utilise votre espace iCloud privé si elle est activée. La clé OpenAI optionnelle est stockée dans le Trousseau de votre appareil. Flux ne possède pas de serveur de comptes utilisateurs.</p>
         </article>
         <article class="mini">
           <h3>6. Réseau et services tiers</h3>
-          <p>Flux contacte les sites et flux que vous choisissez pour récupérer leurs contenus. Si vous utilisez le partage vers des services externes, leurs propres politiques s'appliquent. Flux n'intègre pas de régie publicitaire tierce par défaut.</p>
+          <p>Flux contacte les sources que vous choisissez pour récupérer les articles et leurs images. Les résumés Apple Intelligence utilisent les modèles disponibles sur votre appareil. La météo optionnelle utilise Apple WeatherKit et la localisation autorisée. Les services Apple et les sites consultés appliquent leurs propres politiques. Flux n'intègre pas de régie publicitaire ni de suivi publicitaire.</p>
         </article>
         <article class="mini">
           <h3>7. Conservation</h3>
-          <p>Les données restent locales tant que vous utilisez l'app, ou jusqu'à leur suppression manuelle depuis l'app ou par désinstallation.</p>
+          <p>Les données locales restent sur l'appareil jusqu'à leur suppression dans Flux ou la désinstallation. La suppression locale ne supprime pas automatiquement les données déjà synchronisées sur iCloud. Pour la synchronisation, les règles et réglages de votre compte iCloud s'appliquent.</p>
         </article>
         <article class="mini">
           <h3>8. Vos droits</h3>
           <p>Selon la réglementation applicable, vous pouvez demander l'accès, la rectification, l'effacement ou la limitation des données vous concernant. Pour cela, écrivez à contact@adriendonot.com.</p>
+        </article>
+        <article class="mini">
+          <h3>9. Voix OpenAI optionnelle</h3>
+          <p>La voix système fonctionne sans clé OpenAI. Si vous choisissez OpenAI et fournissez votre propre clé API, Flux transmet le texte à lire, la langue et la voix choisie à l'API OpenAI. La requête est authentifiée avec votre clé et peut être liée à votre compte OpenAI. Aucun historique complet de votre bibliothèque ni aucune note personnelle n'est envoyé pour cette fonction.</p>
+          <p>OpenAI peut conserver le contenu des requêtes et réponses jusqu'à 30 jours pour la prévention des abus, selon les réglages de votre compte et les exceptions décrites par OpenAI. Les sorties audio de Chat Completions peuvent être conservées pendant une heure. Les données API ne servent pas à entraîner les modèles par défaut. Consultez les <a href="https://developers.openai.com/api/docs/guides/your-data/">règles de conservation OpenAI</a>.</p>
+          <p>Vous pouvez revenir à la voix système et supprimer votre clé dans les réglages de Flux. Cela arrête les prochains envois à OpenAI, sans supprimer les données déjà traitées par ce service.</p>
         </article>
       </div>
     </section>

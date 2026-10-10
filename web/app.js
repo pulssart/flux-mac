@@ -17,10 +17,10 @@ const I18N = {
     cta_discover: "Découvrir l’app",
     hero_n1: "Conçu pour macOS & iPadOS",
     hero_n2: "Synchronisé par iCloud",
-    hero_n3: "100 % local",
+    hero_n3: "Voix système ou OpenAI",
 
     as_1: "Aucun compte requis",
-    as_2: "Vos données restent sur l’appareil",
+    as_2: "Stockage local et iCloud privé",
     as_3: "Sync Mac ↔ iPad via iCloud",
     as_4: "Pensé localement par les modèles d’Apple",
 
@@ -71,13 +71,13 @@ const I18N = {
     m2_t: "iCloud privé",
     m2_p: "Flux, dossiers et articles lus se synchronisent entre vos appareils via votre iCloud.",
     m3_t: "Local d’abord",
-    m3_p: "Pas de compte, pas de serveur. Vos lectures vivent sur votre appareil.",
+    m3_p: "Pas de compte Flux. Vos lectures sont locales ou synchronisées via votre iCloud. La voix OpenAI optionnelle transmet le texte à ce service.",
     m4_t: "Sans pistage",
     m4_p: "Aucune régie publicitaire, aucun profilage. Vous lisez, c’est tout.",
 
     privacy_eyebrow: "Local d’abord",
     privacy_title: "Vos lectures restent chez vous.",
-    privacy_lead: "Pas de compte à créer, pas de profil à nourrir. Vos sources et vos articles vivent sur votre appareil et se synchronisent uniquement via votre iCloud privé. Flux n’intègre aucune régie publicitaire.",
+    privacy_lead: "Vos sources et articles vivent sur votre appareil et se synchronisent via votre iCloud privé. La voix OpenAI est facultative et transmet le texte demandé avec votre propre clé API. Flux n’intègre aucune régie publicitaire.",
     privacy_link: "Lire la politique de confidentialité",
 
     faq_eyebrow: "Questions fréquentes",
@@ -87,7 +87,7 @@ const I18N = {
     faq_2_q: "Que vient faire l’intelligence d’Apple ici ?",
     faq_2_a: "Flux s’appuie sur les modèles d’Apple, exécutés localement, pour filtrer le bruit, regrouper les sujets et composer la vue « Aujourd’hui » et les synthèses. Le traitement reste sur votre appareil — aucun contenu n’est envoyé ailleurs pour cela.",
     faq_3_q: "Mes données quittent-elles mon appareil ?",
-    faq_3_a: "Non. Flux ne demande pas de compte. Vos données restent locales et ne transitent que par votre iCloud privé pour la synchronisation. Flux contacte uniquement les sites et flux que vous ajoutez, pour en récupérer le contenu.",
+    faq_3_a: "Flux contacte vos sources pour récupérer leurs contenus et utilise votre iCloud privé pour la synchronisation. La voix système ne demande pas de clé. Si vous choisissez la voix OpenAI, le texte à lire est transmis à OpenAI. La politique de confidentialité détaille ces traitements.",
     faq_4_q: "Quels formats de sources sont pris en charge ?",
     faq_4_a: "RSS, Atom, blogs, newsletters et chaînes YouTube. Collez une URL : Flux détecte le flux quand le site le permet.",
     faq_5_q: "Flux est-il gratuit ?",
@@ -95,7 +95,7 @@ const I18N = {
 
     closing_eyebrow: "Commencer",
     closing_title: "Reprenez le fil, à votre rythme.",
-    closing_n: "Sur le Mac App Store · Mac & iPad · 100 % local",
+    closing_n: "Mac & iPad · Voix OpenAI optionnelle",
 
     footer_tagline: "Un web lisible, sur votre Mac.",
     footer_features: "Fonctionnalités",
@@ -119,10 +119,10 @@ const I18N = {
     cta_discover: "Discover the app",
     hero_n1: "Built for macOS & iPadOS",
     hero_n2: "Synced over iCloud",
-    hero_n3: "100% local",
+    hero_n3: "System or OpenAI voice",
 
     as_1: "No account required",
-    as_2: "Your data stays on device",
+    as_2: "Local storage and private iCloud",
     as_3: "Mac ↔ iPad sync via iCloud",
     as_4: "Shaped on-device by Apple’s models",
 
@@ -173,13 +173,13 @@ const I18N = {
     m2_t: "Private iCloud",
     m2_p: "Feeds, folders, and read status sync across your devices through your iCloud.",
     m3_t: "Local first",
-    m3_p: "No account, no server. Your reading lives on your device.",
+    m3_p: "No Flux account. Reading data is local or synced through your private iCloud. Optional OpenAI narration sends the requested text to that service.",
     m4_t: "No tracking",
     m4_p: "No ad networks, no profiling. You just read.",
 
     privacy_eyebrow: "Local first",
     privacy_title: "Your reading stays yours.",
-    privacy_lead: "No account to create, no profile to feed. Your sources and articles live on your device and sync only through your private iCloud. Flux includes no ad network.",
+    privacy_lead: "Your sources and articles live on your device and sync through your private iCloud. Optional OpenAI narration sends the requested text using your own API key. Flux includes no advertising network.",
     privacy_link: "Read the privacy policy",
 
     faq_eyebrow: "FAQ",
@@ -189,7 +189,7 @@ const I18N = {
     faq_2_q: "What does Apple’s intelligence do here?",
     faq_2_a: "Flux relies on Apple’s models, run locally, to filter noise, group topics, and compose the “Today” view and recaps. The processing stays on your device — no content is sent elsewhere for it.",
     faq_3_q: "Does my data leave my device?",
-    faq_3_a: "No. Flux requires no account. Your data stays local and only moves through your private iCloud for syncing. Flux contacts only the sites and feeds you add, to fetch their content.",
+    faq_3_a: "Flux contacts your sources to fetch their content and uses private iCloud for synchronization. System narration needs no key. If you choose OpenAI narration, the text is sent to OpenAI. The privacy policy explains these transfers.",
     faq_4_q: "Which source formats are supported?",
     faq_4_a: "RSS, Atom, blogs, newsletters, and YouTube channels. Paste a URL: Flux detects the feed when the site allows it.",
     faq_5_q: "Is Flux free?",
@@ -197,7 +197,7 @@ const I18N = {
 
     closing_eyebrow: "Get started",
     closing_title: "Pick the thread back up, at your own pace.",
-    closing_n: "On the Mac App Store · Mac & iPad · 100% local",
+    closing_n: "Mac & iPad · Optional OpenAI narration",
 
     footer_tagline: "A readable web, on your Mac.",
     footer_features: "Features",
